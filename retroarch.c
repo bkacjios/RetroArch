@@ -32201,21 +32201,28 @@ void video_driver_monitor_reset(void)
    p_rarch->video_driver_frame_time_count = 0;
 }
 
+static int volume_lerp(int min, int max, float perc) {
+   return min + (max - min) * perc;
+}
+
 void video_driver_set_brightness(void)
 {
    struct rarch_state *p_rarch = &rarch_st;
    settings_t  *settings       = p_rarch->configuration_settings;
    unsigned  brightness  = settings->uints.video_brightness;
 
-   FILE* f;
-
-   f = fopen("/sys/class/disp/disp/attr/lcdbl", "w");
+   FILE* f = fopen("/sys/class/disp/disp/attr/lcdbl", "w");
 
    if(f == NULL)
       return;
 
-   fprintf(f, "%d", (int)(((float)brightness/100)*255));
+   float percent = (float)brightness/100;
 
+   // 5 seems to be the lowest value that makes the screen still visible
+   int value = volume_lerp(5, 255, percent);
+
+   // Write the brightness value to the device
+   fprintf(f, "%d", value);
    fclose(f);
 }
 

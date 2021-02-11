@@ -10153,9 +10153,9 @@ static bool setting_append_list(
             menu_settings_list_current_add_range(
                   list,
                   list_info,
-                  2,
+                  0,
                   100,
-                  1,
+                  5,
                   true,
                   true);
 
