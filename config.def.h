@@ -191,6 +191,8 @@
  * specific monitors, 1 being the first monitor. */
 #define DEFAULT_MONITOR_INDEX 0
 
+#define DEFAULT_BRIGHTNESS 100
+
 /* Window */
 /* Window size. A value of 0 uses window scale
  * multiplied by the core framebuffer size. */

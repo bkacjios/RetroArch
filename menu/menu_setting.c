@@ -10135,6 +10135,30 @@ static bool setting_append_list(
                MENU_SETTINGS_LIST_CURRENT_ADD_CMD(list, list_info, CMD_EVENT_REINIT);
             }
 
+            CONFIG_UINT(
+                  list, list_info,
+                  &settings->uints.video_brightness,
+                  MENU_ENUM_LABEL_VIDEO_BRIGHTNESS,
+                  MENU_ENUM_LABEL_VALUE_VIDEO_BRIGHTNESS,
+                  DEFAULT_BRIGHTNESS,
+                  &group_info,
+                  &subgroup_info,
+                  parent_group,
+                  general_write_handler,
+                  general_read_handler);
+            MENU_SETTINGS_LIST_CURRENT_ADD_CMD(
+                  list,
+                  list_info,
+                  CMD_EVENT_VIDEO_SET_BRIGHTNESS);
+            menu_settings_list_current_add_range(
+                  list,
+                  list_info,
+                  2,
+                  100,
+                  1,
+                  true,
+                  true);
+
             END_SUB_GROUP(list, list_info, parent_group);
             START_SUB_GROUP(list, list_info, "Aspect", &group_info, &subgroup_info, parent_group);
             CONFIG_UINT(

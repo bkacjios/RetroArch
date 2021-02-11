@@ -743,6 +743,9 @@ const struct rarch_key_map rarch_key_map_sdl[] = {
    { SDLK_KP_LEFTPAREN, RETROK_LEFTPAREN }, // L2
    { SDLK_KP_RIGHTPAREN, RETROK_RIGHTPAREN }, // R2
    { SDLK_SELECT, RETROK_SELECT }, // Select
+   //{ SDLK_POWER, RETROK_ESCAPE}, // Power
+   //{ SDLK_VOLUMEUP, RETROK_KP_PLUS }, //  Volume up
+   //{ SDLK_VOLUMEDOWN, RETROK_KP_MINUS }, // Volume down
 
    { 0, RETROK_UNKNOWN },
 };

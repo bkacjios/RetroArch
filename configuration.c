@@ -1845,6 +1845,7 @@ static struct config_uint_setting *populate_settings_uint(
    SETTING_UINT("keyboard_gamepad_mapping_type",&settings->uints.input_keyboard_gamepad_mapping_type, true, 1, false);
    SETTING_UINT("input_poll_type_behavior",     &settings->uints.input_poll_type_behavior, true, 2, false);
    SETTING_UINT("video_monitor_index",          &settings->uints.video_monitor_index, true, DEFAULT_MONITOR_INDEX, false);
+   SETTING_UINT("video_brightness",             &settings->uints.video_brightness, true, DEFAULT_BRIGHTNESS, false);
    SETTING_UINT("video_fullscreen_x",           &settings->uints.video_fullscreen_x,  true, DEFAULT_FULLSCREEN_X, false);
    SETTING_UINT("video_fullscreen_y",           &settings->uints.video_fullscreen_y,  true, DEFAULT_FULLSCREEN_Y, false);
    SETTING_UINT("video_window_opacity",         &settings->uints.video_window_opacity, true, DEFAULT_WINDOW_OPACITY, false);

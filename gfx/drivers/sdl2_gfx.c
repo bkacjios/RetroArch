@@ -126,7 +126,7 @@ static void sdl2_init_font(sdl2_video_t *vid, const char *font_path,
             &vid->font_driver, &vid->font_data,
             *font_path ? font_path : NULL, font_size))
    {
-      RARCH_WARN("[SDL]: Could not initialize fonts.\n");
+      RARCH_WARN("[SDL2]: Could not initialize fonts.\n");
       return;
    }
 
@@ -171,7 +171,7 @@ static void sdl2_init_font(sdl2_video_t *vid, const char *font_path,
       SDL_SetTextureBlendMode(vid->font.tex, SDL_BLENDMODE_ADD);
    }
    else
-      RARCH_WARN("[SDL]: Failed to initialize font texture: %s\n", SDL_GetError());
+      RARCH_WARN("[SDL2]: Failed to initialize font texture: %s\n", SDL_GetError());
 
    SDL_FreePalette(pal);
    SDL_FreeSurface(tmp);
@@ -448,9 +448,9 @@ static void *sdl2_gfx_init(const video_info_t *video,
    }
 
    if (!video->fullscreen)
-      RARCH_LOG("[SDL]: Creating window @ %ux%u\n", video->height, video->width);
+      RARCH_LOG("[SDL2]: Creating window @ %ux%u\n", video->height, video->width);
    else
-      RARCH_LOG("[SDL]: Creating screen @ %ux%u\n", video->height, video->width);
+      RARCH_LOG("[SDL2]: Creating screen @ %ux%u\n", video->height, video->width);
 
    if (video->fullscreen)
       flags = settings->bools.video_windowed_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN;

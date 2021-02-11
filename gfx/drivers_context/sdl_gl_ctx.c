@@ -94,9 +94,12 @@ static void *sdl_ctx_init(void *video_driver)
    }
    else if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0)
       goto error;
+   
+   SDL_version version;
+   SDL_GetVersion(&version);
 
-   RARCH_LOG("[SDL_GL] SDL %i.%i.%i gfx context driver initialized.\n",
-         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
+   RARCH_LOG("[SDL_GL]: SDL %i.%i.%i gfx context driver initialized: %s\n",
+         version.major, version.minor, version.patch, SDL_GetCurrentVideoDriver());
 
    return sdl;
 

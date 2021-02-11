@@ -2977,6 +2977,10 @@ MSG_HASH(
    "video_force_srgb_disable"
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VIDEO_BRIGHTNESS,
+   "video_brightness"
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VIDEO_FRAME_DELAY,
    "video_frame_delay"
    )

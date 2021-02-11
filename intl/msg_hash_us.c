@@ -537,6 +537,10 @@ int msg_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "OpenGL drivers on Windows have video problems \n"
                              "with sRGB FBO support enabled.");
             break;
+        case MENU_ENUM_LABEL_VIDEO_BRIGHTNESS:
+            snprintf(s, len,
+                     "Change the brightness of your screen.");
+            break;
         case MENU_ENUM_LABEL_AUDIO_ENABLE:
             snprintf(s, len,
                      "Enable audio output.");

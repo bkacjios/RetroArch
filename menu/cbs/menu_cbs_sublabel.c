@@ -412,6 +412,7 @@ DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_gpu_screenshot,          MENU_
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_rotation,                MENU_ENUM_SUBLABEL_VIDEO_ROTATION)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_screen_orientation,            MENU_ENUM_SUBLABEL_SCREEN_ORIENTATION)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_force_srgb_enable,       MENU_ENUM_SUBLABEL_VIDEO_FORCE_SRGB_DISABLE)
+DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_brightness,              MENU_ENUM_SUBLABEL_VIDEO_BRIGHTNESS)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_fullscreen,              MENU_ENUM_SUBLABEL_VIDEO_FULLSCREEN)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_windowed_fullscreen,     MENU_ENUM_SUBLABEL_VIDEO_WINDOWED_FULLSCREEN)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_video_gpu_record,              MENU_ENUM_SUBLABEL_VIDEO_GPU_RECORD)
@@ -2962,6 +2963,9 @@ int menu_cbs_init_bind_sublabel(menu_file_list_cbs_t *cbs,
             break;
          case MENU_ENUM_LABEL_VIDEO_FORCE_SRGB_DISABLE:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_video_force_srgb_enable);
+            break;
+         case MENU_ENUM_LABEL_VIDEO_BRIGHTNESS:
+            BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_video_brightness);
             break;
          case MENU_ENUM_LABEL_VIDEO_ROTATION:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_video_rotation);

@@ -2230,6 +2230,8 @@ struct rarch_state
    float video_driver_core_hz;
    float video_driver_aspect_ratio;
 
+   unsigned video_driver_brightness;
+
 #ifdef HAVE_AUDIOMIXER
    float audio_driver_mixer_volume_gain;
 #endif
@@ -16347,6 +16349,9 @@ bool command_event(enum event_command cmd, void *data)
                         GFX_CTX_FLAGS_ADAPTIVE_VSYNC) &&
                      adaptive_vsync, swap_interval);
          }
+         break;
+      case CMD_EVENT_VIDEO_SET_BRIGHTNESS:
+         video_driver_set_brightness();
          break;
       case CMD_EVENT_VIDEO_SET_ASPECT_RATIO:
          video_driver_set_aspect_ratio();
@@ -32194,6 +32199,24 @@ void video_driver_monitor_reset(void)
 {
    struct rarch_state            *p_rarch = &rarch_st;
    p_rarch->video_driver_frame_time_count = 0;
+}
+
+void video_driver_set_brightness(void)
+{
+   struct rarch_state *p_rarch = &rarch_st;
+   settings_t  *settings       = p_rarch->configuration_settings;
+   unsigned  brightness  = settings->uints.video_brightness;
+
+   FILE* f;
+
+   f = fopen("/sys/class/disp/disp/attr/lcdbl", "w");
+
+   if(f == NULL)
+      return;
+
+   fprintf(f, "%d", (int)(((float)brightness/100)*255));
+
+   fclose(f);
 }
 
 void video_driver_set_aspect_ratio(void)

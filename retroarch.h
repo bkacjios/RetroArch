@@ -1550,6 +1550,8 @@ bool video_driver_get_prev_video_out(void);
 
 void video_driver_monitor_reset(void);
 
+void video_driver_set_brightness(void);
+
 void video_driver_set_aspect_ratio(void);
 
 void video_driver_update_viewport(struct video_viewport* vp, bool force_full, bool keep_aspect);
