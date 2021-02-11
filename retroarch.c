@@ -36823,6 +36823,8 @@ bool retroarch_main_init(int argc, char *argv[])
    input_driver_deinit_command(p_rarch);
    input_driver_init_command(p_rarch);
    input_driver_deinit_remote(p_rarch);
+
+   command_event(CMD_EVENT_VIDEO_SET_BRIGHTNESS, NULL);
 #ifdef HAVE_NETWORKGAMEPAD
    {
       if (p_rarch->configuration_settings->bools.network_remote_enable)
