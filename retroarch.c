@@ -32216,7 +32216,7 @@ void video_driver_set_brightness(void)
    if(f == NULL)
       return;
 
-   float percent = (float)brightness/100;
+   float percent = pow((float)brightness/100, 2);
 
    // 5 seems to be the lowest value that makes the screen still visible
    int value = volume_lerp(5, 255, percent);
