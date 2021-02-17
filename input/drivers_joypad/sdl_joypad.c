@@ -269,6 +269,7 @@ static bool sdl_joypad_init(void *data)
 
 #if HAVE_SDL2
    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+   SDL_SetHint("SDL_JOYSTICK_CALIBRATION_FILE", "/mnt/extsd/calibration.dat");
 
    g_has_haptic = false;
    if (SDL_InitSubSystem(SDL_INIT_HAPTIC) < 0)
