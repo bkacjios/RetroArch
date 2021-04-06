@@ -36,6 +36,10 @@
 #include "../core_info.h"
 #include "../core_backup.h"
 
+#if defined(ANDROID)
+#include "../play_feature_delivery/play_feature_delivery.h"
+#endif
+
 #define CORE_BACKUP_CHUNK_SIZE 4096
 
 enum core_backup_status
@@ -57,26 +61,26 @@ enum core_backup_status
 
 typedef struct core_backup_handle
 {
+   int64_t core_file_size;
+   int64_t backup_file_size;
+   int64_t file_data_read;
    char *dir_core_assets;
    char *core_path;
    char *core_name;
    char *backup_path;
-   enum core_backup_type backup_type;
-   enum core_backup_mode backup_mode;
-   size_t auto_backup_history_size;
-   size_t num_auto_backups_to_remove;
-   size_t backup_index;
-   int64_t core_file_size;
-   int64_t backup_file_size;
-   int64_t file_data_read;
-   uint32_t core_crc;
-   uint32_t backup_crc;
-   bool crc_match;
-   bool success;
    intfstream_t *core_file;
    intfstream_t *backup_file;
    core_backup_list_t *backup_list;
+   size_t auto_backup_history_size;
+   size_t num_auto_backups_to_remove;
+   size_t backup_index;
+   uint32_t core_crc;
+   uint32_t backup_crc;
+   enum core_backup_type backup_type;
+   enum core_backup_mode backup_mode;
    enum core_backup_status status;
+   bool crc_match;
+   bool success;
 } core_backup_handle_t;
 
 /*********************/
@@ -193,80 +197,76 @@ static void task_core_backup_handler(retro_task_t *task)
    switch (backup_handle->status)
    {
       case CORE_BACKUP_BEGIN:
+         /* Get current list of backups */
+         backup_handle->backup_list = core_backup_list_init(
+               backup_handle->core_path, backup_handle->dir_core_assets);
+
+         /* Open core file */
+         backup_handle->core_file = intfstream_open_file(
+               backup_handle->core_path,
+               RETRO_VFS_FILE_ACCESS_READ,
+               RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+         if (!backup_handle->core_file)
          {
-            /* Get current list of backups */
-            backup_handle->backup_list = core_backup_list_init(
-                  backup_handle->core_path, backup_handle->dir_core_assets);
-
-            /* Open core file */
-            backup_handle->core_file = intfstream_open_file(
-                  backup_handle->core_path,
-                  RETRO_VFS_FILE_ACCESS_READ,
-                  RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-            if (!backup_handle->core_file)
-            {
-               RARCH_ERR("[core backup] Failed to open core file: %s\n",
-                     backup_handle->core_path);
-               backup_handle->status = CORE_BACKUP_END;
-               break;
-            }
-
-            /* Get core file size */
-            backup_handle->core_file_size = intfstream_get_size(backup_handle->core_file);
-
-            if (backup_handle->core_file_size <= 0)
-            {
-               RARCH_ERR("[core backup] Core file is empty/invalid: %s\n",
-                     backup_handle->core_path);
-               backup_handle->status = CORE_BACKUP_END;
-               break;
-            }
-
-            /* Go to crc checking phase */
-            backup_handle->status = CORE_BACKUP_CHECK_CRC;
+            RARCH_ERR("[core backup] Failed to open core file: %s\n",
+                  backup_handle->core_path);
+            backup_handle->status = CORE_BACKUP_END;
+            break;
          }
+
+         /* Get core file size */
+         backup_handle->core_file_size = intfstream_get_size(backup_handle->core_file);
+
+         if (backup_handle->core_file_size <= 0)
+         {
+            RARCH_ERR("[core backup] Core file is empty/invalid: %s\n",
+                  backup_handle->core_path);
+            backup_handle->status = CORE_BACKUP_END;
+            break;
+         }
+
+         /* Go to CRC checking phase */
+         backup_handle->status = CORE_BACKUP_CHECK_CRC;
          break;
       case CORE_BACKUP_CHECK_CRC:
+         /* Check whether we need to calculate CRC value */
+         if (backup_handle->core_crc == 0)
          {
-            /* Check whether we need to calculate crc value */
-            if (backup_handle->core_crc == 0)
-            {
-               if (!intfstream_get_crc(backup_handle->core_file,
+            if (!intfstream_get_crc(backup_handle->core_file,
                      &backup_handle->core_crc))
-               {
-                  RARCH_ERR("[core backup] Failed to determine CRC of core file: %s\n",
-                        backup_handle->core_path);
-                  backup_handle->status = CORE_BACKUP_END;
-                  break;
-               }
-            }
-
-            /* Check whether a backup with this crc already
-             * exists */
-            if (backup_handle->backup_list)
             {
-               const core_backup_list_entry_t *entry = NULL;
+               RARCH_ERR("[core backup] Failed to determine CRC of core file: %s\n",
+                     backup_handle->core_path);
+               backup_handle->status = CORE_BACKUP_END;
+               break;
+            }
+         }
 
-               if (core_backup_list_get_crc(
+         /* Check whether a backup with this CRC already
+          * exists */
+         if (backup_handle->backup_list)
+         {
+            const core_backup_list_entry_t *entry = NULL;
+
+            if (core_backup_list_get_crc(
                      backup_handle->backup_list,
                      backup_handle->core_crc,
                      backup_handle->backup_mode,
                      &entry))
-               {
-                  RARCH_LOG("[core backup] Current version of core is already backed up: %s\n",
-                        entry->backup_path);
+            {
+               RARCH_LOG("[core backup] Current version of core is already backed up: %s\n",
+                     entry->backup_path);
 
-                  backup_handle->crc_match = true;
-                  backup_handle->success   = true;
-                  backup_handle->status    = CORE_BACKUP_END;
-                  break;
-               }
+               backup_handle->crc_match = true;
+               backup_handle->success   = true;
+               backup_handle->status    = CORE_BACKUP_END;
+               break;
             }
-
-            /* Go to pre-iteration phase */
-            backup_handle->status = CORE_BACKUP_PRE_ITERATE;
          }
+
+         /* Go to pre-iteration phase */
+         backup_handle->status = CORE_BACKUP_PRE_ITERATE;
          break;
       case CORE_BACKUP_PRE_ITERATE:
          {
@@ -322,12 +322,11 @@ static void task_core_backup_handler(retro_task_t *task)
          break;
       case CORE_BACKUP_ITERATE:
          {
-            int64_t data_read    = 0;
             int64_t data_written = 0;
             uint8_t buffer[CORE_BACKUP_CHUNK_SIZE];
-
             /* Read a single chunk from the core file */
-            data_read = intfstream_read(backup_handle->core_file, buffer, sizeof(buffer));
+            int64_t data_read    = intfstream_read(
+                  backup_handle->core_file, buffer, sizeof(buffer));
 
             if (data_read < 0)
             {
@@ -518,7 +517,7 @@ task_finished:
    free_core_backup_handle(backup_handle);
 }
 
-/* Note 1: If crc is set to 0, crc of core_path file will
+/* Note 1: If CRC is set to 0, CRC of core_path file will
  * be calculated automatically
  * Note 2: If core_display_name is set to NULL, display
  * name will be determined automatically
@@ -675,7 +674,7 @@ static void task_core_restore_handler(retro_task_t *task)
       case CORE_RESTORE_GET_CORE_CRC:
          {
             /* If core file already exists, get its current
-             * crc value */
+             * CRC value */
             if (path_is_valid(backup_handle->core_path))
             {
                /* Open core file for reading */
@@ -691,7 +690,7 @@ static void task_core_restore_handler(retro_task_t *task)
                   break;
                }
 
-               /* Get crc value */
+               /* Get CRC value */
                if (!intfstream_get_crc(backup_handle->core_file,
                      &backup_handle->core_crc))
                {
@@ -707,43 +706,39 @@ static void task_core_restore_handler(retro_task_t *task)
                backup_handle->core_file = NULL;
             }
 
-            /* Go to next crc gathering phase */
+            /* Go to next CRC gathering phase */
             backup_handle->status = CORE_RESTORE_GET_BACKUP_CRC;
          }
          break;
       case CORE_RESTORE_GET_BACKUP_CRC:
-         {
-            /* Get crc value of backup file */
-            if (!core_backup_get_backup_crc(
+         /* Get CRC value of backup file */
+         if (!core_backup_get_backup_crc(
                   backup_handle->backup_path, &backup_handle->backup_crc))
-            {
-               RARCH_ERR("[core restore] Failed to determine CRC of core backup file: %s\n",
-                     backup_handle->backup_path);
-               backup_handle->status = CORE_RESTORE_END;
-               break;
-            }
-
-            /* Go to crc comparison phase */
-            backup_handle->status = CORE_RESTORE_CHECK_CRC;
+         {
+            RARCH_ERR("[core restore] Failed to determine CRC of core backup file: %s\n",
+                  backup_handle->backup_path);
+            backup_handle->status = CORE_RESTORE_END;
+            break;
          }
+
+         /* Go to CRC comparison phase */
+         backup_handle->status = CORE_RESTORE_CHECK_CRC;
          break;
       case CORE_RESTORE_CHECK_CRC:
+         /* Check whether current core matches backup CRC */
+         if (backup_handle->core_crc == backup_handle->backup_crc)
          {
-            /* Check whether current core matches backup crc */
-            if (backup_handle->core_crc == backup_handle->backup_crc)
-            {
-               RARCH_LOG("[core restore] Selected backup core file is already installed: %s\n",
-                     backup_handle->backup_path);
+            RARCH_LOG("[core restore] Selected backup core file is already installed: %s\n",
+                  backup_handle->backup_path);
 
-               backup_handle->crc_match = true;
-               backup_handle->success   = true;
-               backup_handle->status    = CORE_RESTORE_END;
-               break;
-            }
-
-            /* Go to pre-iteration phase */
-            backup_handle->status = CORE_RESTORE_PRE_ITERATE;
+            backup_handle->crc_match = true;
+            backup_handle->success   = true;
+            backup_handle->status    = CORE_RESTORE_END;
+            break;
          }
+
+         /* Go to pre-iteration phase */
+         backup_handle->status = CORE_RESTORE_PRE_ITERATE;
          break;
       case CORE_RESTORE_PRE_ITERATE:
          {
@@ -779,6 +774,27 @@ static void task_core_restore_handler(retro_task_t *task)
                break;
             }
 
+#if defined(ANDROID)
+            /* If this is a Play Store build and the
+             * core is currently installed via
+             * play feature delivery, must delete
+             * the existing core before attempting
+             * to write any data */
+            if (play_feature_delivery_enabled())
+            {
+               const char *core_filename = path_basename(
+                     backup_handle->core_path);
+
+               if (play_feature_delivery_core_installed(core_filename) &&
+                   !play_feature_delivery_delete(core_filename))
+               {
+                  RARCH_ERR("[core restore] Failed to delete existing play feature delivery core: %s\n",
+                        backup_handle->core_path);
+                  backup_handle->status = CORE_RESTORE_END;
+                  break;
+               }
+            }
+#endif
             /* Open core file for writing */
             backup_handle->core_file = intfstream_open_file(
                   backup_handle->core_path, RETRO_VFS_FILE_ACCESS_WRITE,

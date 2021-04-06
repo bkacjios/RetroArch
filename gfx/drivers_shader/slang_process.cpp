@@ -1,4 +1,4 @@
-﻿/*  RetroArch - A frontend for libretro.
+/*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2017 - Hans-Kristian Arntzen
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
@@ -40,7 +40,7 @@ template <typename M, typename S>
 static string get_semantic_name(const unordered_map<string, M>* map,
       S semantic, unsigned index)
 {
-   for (const pair<string, M>& m : *map)
+   for (const auto& m : *map)
    {
       if (m.second.semantic == semantic && m.second.index == index)
          return m.first;
@@ -202,17 +202,13 @@ static bool slang_process_reflection(
       slang_semantic_meta& src = sl_reflection.semantics[semantic];
       if (src.push_constant || src.uniform)
       {
-         uniform_sem_t uniform;
-         const char *uniform_id = get_semantic_name(
-               sl_reflection, (slang_semantic)semantic, 0).c_str();
+         uniform_sem_t uniform = { map->uniforms[semantic],
+            src.num_components
+               * (unsigned)sizeof(float) };
+         string uniform_id     = get_semantic_name(
+               sl_reflection, (slang_semantic)semantic, 0);
 
-         uniform.data           = map->uniforms[semantic];
-         uniform.size           = src.num_components * (unsigned)sizeof(float);
-         uniform.offset         = 0;
-         uniform.id[0]          = '\0';
-
-         if (!string_is_empty(uniform_id))
-            strlcpy(uniform.id, uniform_id, sizeof(uniform.id));
+         strlcpy(uniform.id, uniform_id.c_str(), sizeof(uniform.id));
 
          if (src.push_constant)
          {
@@ -233,16 +229,12 @@ static bool slang_process_reflection(
 
       if (src.push_constant || src.uniform)
       {
-         uniform_sem_t uniform;
-         const char *uniform_id = get_semantic_name(
-               sl_reflection, SLANG_SEMANTIC_FLOAT_PARAMETER, i).c_str();
+         uniform_sem_t uniform = {
+            &shader_info->parameters[i].current, sizeof(float) };
 
-         uniform.data           = &shader_info->parameters[i].current;
-         uniform.size           = sizeof(float);
-         uniform.offset         = 0;
-         uniform.id[0]          = '\0';
-
-         strlcpy(uniform.id, uniform_id, sizeof(uniform.id));
+         string uniform_id = get_semantic_name(
+               sl_reflection, SLANG_SEMANTIC_FLOAT_PARAMETER, i);
+         strlcpy(uniform.id, uniform_id.c_str(), sizeof(uniform.id));
 
          if (src.push_constant)
          {
@@ -303,20 +295,18 @@ static bool slang_process_reflection(
 
          if (src.push_constant || src.uniform)
          {
-            uniform_sem_t uniform;
-            const char *uniform_id =
-                  get_size_semantic_name(
-                        sl_reflection,
-                        (slang_texture_semantic)semantic, index).c_str();
+            uniform_sem_t uniform = {
+               (void*)((uintptr_t)map->textures[semantic].size
+                     + index * map->textures[semantic].size_stride),
+               4 * sizeof(float)
+            };
 
-            uniform.data           = (void*)((uintptr_t)
-                  map->textures[semantic].size
-                  + index * map->textures[semantic].size_stride);
-            uniform.size           = 4 * sizeof(float);
-            uniform.offset         = 0;
-            uniform.id[0]          = '\0';
+            string uniform_id =
+               get_size_semantic_name(
+                     sl_reflection,
+                     (slang_texture_semantic)semantic, index);
 
-            strlcpy(uniform.id, uniform_id, sizeof(uniform.id));
+            strlcpy(uniform.id, uniform_id.c_str(), sizeof(uniform.id));
 
             if (src.push_constant)
             {
@@ -428,26 +418,23 @@ bool slang_preprocess_parse_parameters(const char *shader_path,
       struct video_shader *shader)
 {
    glslang_meta meta;
-   bool ret                  = false;
-   struct string_list *lines = string_list_new();
+   struct string_list lines = {0};
+   
+   if (!string_list_initialize(&lines))
+      goto error;
 
-   if (!lines)
-      goto end;
-
-   if (!glslang_read_shader_file(shader_path, lines, true))
-      goto end;
+   if (!glslang_read_shader_file(shader_path, &lines, true))
+      goto error;
    meta = glslang_meta{};
-   if (!glslang_parse_meta(lines, &meta))
-      goto end;
+   if (!glslang_parse_meta(&lines, &meta))
+      goto error;
 
-   ret = slang_preprocess_parse_parameters(meta, shader);
+   string_list_deinitialize(&lines);
+   return slang_preprocess_parse_parameters(meta, shader);
 
-end:
-
-   if (lines)
-      string_list_free(lines);
-
-   return ret;
+error:
+   string_list_deinitialize(&lines);
+   return false;
 }
 
 bool slang_process(

@@ -56,6 +56,10 @@
 #include <sys/system_properties.h>
 #endif
 
+#if defined(DINGUX)
+#include "../../dingux/dingux_utils.h"
+#endif
+
 #include <boolean.h>
 #include <retro_dirent.h>
 #include <retro_inline.h>
@@ -121,6 +125,7 @@ static char unix_cpu_model_name[64] = {0};
 
 /* /proc/meminfo parameters */
 #define PROC_MEMINFO_PATH              "/proc/meminfo"
+#define PROC_MEMINFO_MEM_TOTAL_TAG     "MemTotal:"
 #define PROC_MEMINFO_MEM_AVAILABLE_TAG "MemAvailable:"
 #define PROC_MEMINFO_MEM_FREE_TAG      "MemFree:"
 #define PROC_MEMINFO_BUFFERS_TAG       "Buffers:"
@@ -496,7 +501,7 @@ static struct android_app* android_app_create(ANativeActivity* activity,
    if (pipe(msgpipe))
    {
       RARCH_ERR("could not create pipe: %s.\n", strerror(errno));
-      if(android_app->savedState)
+      if (android_app->savedState)
         free(android_app->savedState);
       free(android_app);
       return NULL;
@@ -650,7 +655,7 @@ bool test_permissions(const char *path)
       "RetroArch", "Create %s in %s %s\n", buf, path,
       ret ? "true" : "false");
 
-   if(ret)
+   if (ret)
       rmdir(buf);
 
    return ret;
@@ -663,8 +668,7 @@ static void frontend_android_shutdown(bool unused)
    exit(0);
 }
 
-#else
-
+#elif !defined(DINGUX)
 static bool make_proc_acpi_key_val(char **_ptr, char **_key, char **_val)
 {
     char *ptr = *_ptr;
@@ -813,7 +817,6 @@ end:
    buf      = NULL;
    buf_info = NULL;
 }
-
 static void check_proc_acpi_sysfs_battery(const char *node,
       bool *have_battery, bool *charging,
       int *seconds, int *percent)
@@ -952,7 +955,7 @@ static bool int_string(char *str, int *val)
    if (!str)
       return false;
 
-   *val = (int) strtol(str, &endptr, 0);
+   *val = (int)strtol(str, &endptr, 0);
    return ((*str != '\0') && (*endptr == '\0'));
 }
 
@@ -1175,14 +1178,13 @@ static enum frontend_powerstate frontend_unix_get_powerstate(
       int *seconds, int *percent)
 {
    enum frontend_powerstate ret = FRONTEND_POWERSTATE_NONE;
-
-#ifdef ANDROID
-   jint powerstate = ret;
-   jint battery_level = 0;
-   JNIEnv *env = jni_thread_getenv();
+#if defined(ANDROID)
+   jint powerstate              = FRONTEND_POWERSTATE_NONE;
+   jint battery_level           = 0;
+   JNIEnv *env                  = jni_thread_getenv();
 
    if (!env || !g_android)
-      return ret;
+      return FRONTEND_POWERSTATE_NONE;
 
    if (g_android->getPowerstate)
       CALL_INT_METHOD(env, powerstate,
@@ -1195,6 +1197,25 @@ static enum frontend_powerstate frontend_unix_get_powerstate(
    *percent = battery_level;
 
    ret = (enum frontend_powerstate)powerstate;
+#elif defined(DINGUX)
+   /* Dingux seems to have limited battery
+    * reporting capability - if we get a valid
+    * integer here, just assume that state is
+    * FRONTEND_POWERSTATE_ON_POWER_SOURCE
+    * (since most dingux devices are not meant
+    * to be used while charging...) */
+   int battery_level = dingux_get_battery_level();
+
+   if (battery_level < 0)
+      *percent = -1;
+   else
+   {
+      *percent = battery_level;
+      ret      = FRONTEND_POWERSTATE_ON_POWER_SOURCE;
+   }
+
+   /* 'Time left' reporting is unsupported */
+   *seconds = -1;
 #else
    if (frontend_unix_powerstate_check_acpi_sysfs(&ret, seconds, percent))
       return ret;
@@ -1211,7 +1232,7 @@ static enum frontend_powerstate frontend_unix_get_powerstate(
    return ret;
 }
 
-static enum frontend_architecture frontend_unix_get_architecture(void)
+static enum frontend_architecture frontend_unix_get_arch(void)
 {
    struct utsname buffer;
    const char *val        = NULL;
@@ -1256,7 +1277,7 @@ static void frontend_unix_get_os(char *s,
    int rel;
    frontend_android_get_version(major, minor, &rel);
 
-   strlcpy(s, "Android", len);
+   strcpy_literal(s, "Android");
 #else
    unsigned krel;
    struct utsname buffer;
@@ -1266,19 +1287,19 @@ static void frontend_unix_get_os(char *s,
 
    sscanf(buffer.release, "%d.%d.%u", major, minor, &krel);
 #if defined(__FreeBSD__)
-   strlcpy(s, "FreeBSD", len);
+   strcpy_literal(s, "FreeBSD");
 #elif defined(__NetBSD__)
-   strlcpy(s, "NetBSD", len);
+   strcpy_literal(s, "NetBSD");
 #elif defined(__OpenBSD__)
-   strlcpy(s, "OpenBSD", len);
+   strcpy_literal(s, "OpenBSD");
 #elif defined(__DragonFly__)
-   strlcpy(s, "DragonFly BSD", len);
+   strcpy_literal(s, "DragonFly BSD");
 #elif defined(BSD)
-   strlcpy(s, "BSD", len);
+   strcpy_literal(s, "BSD");
 #elif defined(__HAIKU__)
-   strlcpy(s, "Haiku", len);
+   strcpy_literal(s, "Haiku");
 #else
-   strlcpy(s, "Linux", len);
+   strcpy_literal(s, "Linux");
 #endif
 #endif
 }
@@ -1301,6 +1322,30 @@ static void frontend_unix_get_lakka_version(char *s,
 
    pclose(command_file);
 }
+
+static void frontend_unix_set_screen_brightness(int value)
+{
+   char *buffer = NULL;
+   char svalue[16] = {0};
+   unsigned int max_brightness = 100;
+   #if !defined(HAVE_LAKKA_SWITCH)
+   filestream_read_file("/sys/devices/platform/backlight/backlight/backlight/max_brightness",
+                        &buffer, NULL);
+   if (buffer)
+   {
+      sscanf(buffer, "%u", &max_brightness);
+      free(buffer);
+   }
+   #endif
+
+   /* Calculate the brightness */
+   value = (value * max_brightness) / 100;
+
+   snprintf(svalue, sizeof(svalue), "%d\n", value);
+   filestream_write_file("/sys/class/backlight/backlight/brightness",
+                         svalue, strlen(svalue));
+}
+
 #endif
 
 static void frontend_unix_get_env(int *argc,
@@ -1529,14 +1574,14 @@ static void frontend_unix_get_env(int *argc,
       /* set paths depending on the ability to write
        * to internal_storage_path */
 
-      if(!string_is_empty(internal_storage_path))
+      if (!string_is_empty(internal_storage_path))
       {
-         if(test_permissions(internal_storage_path))
+         if (test_permissions(internal_storage_path))
             storage_permissions = INTERNAL_STORAGE_WRITABLE;
       }
-      else if(!string_is_empty(internal_storage_app_path))
+      else if (!string_is_empty(internal_storage_app_path))
       {
-         if(test_permissions(internal_storage_app_path))
+         if (test_permissions(internal_storage_app_path))
             storage_permissions = INTERNAL_STORAGE_APPDIR_WRITABLE;
       }
       else
@@ -1687,29 +1732,29 @@ static void frontend_unix_get_env(int *argc,
 
    /* Set automatic default values per device */
    if (device_is_xperia_play(device_model))
-      g_defaults.settings.out_latency = 128;
+      g_defaults.settings_out_latency = 128;
    else if (strstr(device_model, "GAMEMID_BT"))
-      g_defaults.settings.out_latency = 160;
+      g_defaults.settings_out_latency = 160;
    else if (strstr(device_model, "SHIELD"))
    {
-      g_defaults.settings.video_refresh_rate = 60.0;
+      g_defaults.settings_video_refresh_rate = 60.0;
 #ifdef HAVE_MENU
 #ifdef HAVE_MATERIALUI
-      g_defaults.menu.materialui.menu_color_theme_enable = true;
-      g_defaults.menu.materialui.menu_color_theme        = MATERIALUI_THEME_NVIDIA_SHIELD;
+      g_defaults.menu_materialui_menu_color_theme_enable = true;
+      g_defaults.menu_materialui_menu_color_theme        = MATERIALUI_THEME_NVIDIA_SHIELD;
 #endif
 #endif
 
 #if 0
       /* Set the OK/cancel menu buttons to the default
        * ones used for Shield */
-      g_defaults.menu.controls.set = true;
-      g_defaults.menu.controls.menu_btn_ok     = RETRO_DEVICE_ID_JOYPAD_B;
-      g_defaults.menu.controls.menu_btn_cancel = RETRO_DEVICE_ID_JOYPAD_A;
+      g_defaults.menu_controls_set = true;
+      g_defaults.menu_controls_menu_btn_ok     = RETRO_DEVICE_ID_JOYPAD_B;
+      g_defaults.menu_controls_menu_btn_cancel = RETRO_DEVICE_ID_JOYPAD_A;
 #endif
    }
    else if (strstr(device_model, "JSS15J"))
-      g_defaults.settings.video_refresh_rate = 59.65;
+      g_defaults.settings_video_refresh_rate = 59.65;
 
    /* For gamepad-like/console devices:
     *
@@ -1720,10 +1765,9 @@ static void frontend_unix_get_env(int *argc,
 
    if (device_is_game_console(device_model) || device_is_android_tv())
    {
-      g_defaults.overlay.set    = true;
-      g_defaults.overlay.enable = false;
-      strlcpy(g_defaults.settings.menu, "ozone",
-            sizeof(g_defaults.settings.menu));
+      g_defaults.overlay_set    = true;
+      g_defaults.overlay_enable = false;
+      strcpy_literal(g_defaults.settings_menu, "ozone");
    }
 #else
    char base_path[PATH_MAX] = {0};
@@ -1738,15 +1782,28 @@ static void frontend_unix_get_env(int *argc,
    else if (home)
    {
       strlcpy(base_path, home, sizeof(base_path));
+#if defined(DINGUX)
+      strlcat(base_path, "/.retroarch", sizeof(base_path));
+#else
       strlcat(base_path, "/.config/retroarch", sizeof(base_path));
+#endif
    }
    else
-      strlcpy(base_path, "retroarch", sizeof(base_path));
+      strcpy_literal(base_path, "retroarch");
 
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE], base_path,
          "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
+#if defined(DINGUX)
+   /* On platforms that require manual core installation/
+    * removal, placing core info files in the same directory
+    * as the cores themselves makes file management highly
+    * inconvenient. Use a dedicated core info directory instead */
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], base_path,
+         "core_info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
+#else
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], base_path,
          "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
+#endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], base_path,
          "autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
 
@@ -1769,6 +1826,53 @@ static void frontend_unix_get_env(int *argc,
    else
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS], base_path,
             "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
+
+#if defined(DINGUX)
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], base_path,
+         "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], base_path,
+         "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+#else
+   if (path_is_directory("/usr/local/share/retroarch/filters/audio"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
+            "/usr/local/share/retroarch",
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   else if (path_is_directory("/usr/share/retroarch/filters/audio"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
+            "/usr/share/retroarch",
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   else if (path_is_directory("/usr/local/share/games/retroarch/filters/audio"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
+            "/usr/local/share/games/retroarch",
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   else if (path_is_directory("/usr/share/games/retroarch/filters/audio"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
+            "/usr/share/games/retroarch",
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   else
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], base_path,
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+
+   if (path_is_directory("/usr/local/share/retroarch/filters/video"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
+            "/usr/local/share/retroarch",
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   else if (path_is_directory("/usr/share/retroarch/filters/video"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
+            "/usr/share/retroarch",
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   else if (path_is_directory("/usr/local/share/games/retroarch/filters/video"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
+            "/usr/local/share/games/retroarch",
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   else if (path_is_directory("/usr/share/games/retroarch/filters/video"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
+            "/usr/share/games/retroarch",
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   else
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], base_path,
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+#endif
 
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG], base_path,
          "config", sizeof(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG]));
@@ -1811,12 +1915,13 @@ static void frontend_unix_get_env(int *argc,
          "system", sizeof(g_defaults.dirs[DEFAULT_DIR_SYSTEM]));
 #endif
 
-   for (i = 0; i < DEFAULT_DIR_LAST; i++)
-   {
-      const char *dir_path = g_defaults.dirs[i];
-      if (!string_is_empty(dir_path))
-         path_mkdir(dir_path);
-   }
+#ifndef IS_SALAMANDER
+#if defined(ANDROID)
+   dir_check_defaults("host0:app/custom.ini");
+#else
+   dir_check_defaults("custom.ini");
+#endif
+#endif
 }
 
 #ifdef ANDROID
@@ -1862,6 +1967,7 @@ static void android_app_destroy(struct android_app *android_app)
 
 static void frontend_unix_deinit(void *data)
 {
+   settings_t *settings = config_get_ptr();
 #ifdef ANDROID
    struct android_app *android_app = (struct android_app*)data;
 
@@ -1869,6 +1975,12 @@ static void frontend_unix_deinit(void *data)
       return;
 
    android_app_destroy(android_app);
+#endif
+
+#ifdef HAVE_LAKKA
+   /* Reset brightness to maximum */
+   if (settings->uints.screen_brightness != DEFAULT_SCREEN_BRIGHTNESS)
+      frontend_unix_set_screen_brightness(DEFAULT_SCREEN_BRIGHTNESS);
 #endif
 }
 
@@ -1938,6 +2050,16 @@ static void frontend_unix_init(void *data)
          "doVibrate", "(IIII)V");
    GET_METHOD_ID(env, android_app->getUserLanguageString, class,
          "getUserLanguageString", "()Ljava/lang/String;");
+   GET_METHOD_ID(env, android_app->isPlayStoreBuild, class,
+         "isPlayStoreBuild", "()Z");
+   GET_METHOD_ID(env, android_app->getAvailableCores, class,
+         "getAvailableCores", "()[Ljava/lang/String;");
+   GET_METHOD_ID(env, android_app->getInstalledCores, class,
+         "getInstalledCores", "()[Ljava/lang/String;");
+   GET_METHOD_ID(env, android_app->downloadCore, class,
+         "downloadCore", "(Ljava/lang/String;)V");
+   GET_METHOD_ID(env, android_app->deleteCore, class,
+         "deleteCore", "(Ljava/lang/String;)V");
    CALL_OBJ_METHOD(env, obj, android_app->activity->clazz,
          android_app->getIntent);
 
@@ -2010,8 +2132,10 @@ static int frontend_unix_parse_drive_list(void *data, bool load_content)
    }
 #else
    char base_path[PATH_MAX] = {0};
+   char udisks_media_path[PATH_MAX] = {0};
    const char *xdg          = getenv("XDG_CONFIG_HOME");
    const char *home         = getenv("HOME");
+   const char *user         = getenv("USER");
 
    if (xdg)
    {
@@ -2021,10 +2145,21 @@ static int frontend_unix_parse_drive_list(void *data, bool load_content)
    else if (home)
    {
       strlcpy(base_path, home, sizeof(base_path));
+#if defined(DINGUX)
+      strlcat(base_path, "/.retroarch", sizeof(base_path));
+#else
       strlcat(base_path, "/.config/retroarch", sizeof(base_path));
+#endif
    }
 
-   if(!string_is_empty(base_path))
+   strlcpy(udisks_media_path, "/run/media", sizeof(udisks_media_path));
+   if (user)
+   {
+      strlcat(udisks_media_path, "/", sizeof(udisks_media_path));
+      strlcat(udisks_media_path, user, sizeof(udisks_media_path));
+   }
+
+   if (!string_is_empty(base_path))
    {
       menu_entries_append_enum(list, base_path,
             msg_hash_to_str(MENU_ENUM_LABEL_FILE_DETECT_CORE_LIST_PUSH_DIR),
@@ -2034,6 +2169,13 @@ static int frontend_unix_parse_drive_list(void *data, bool load_content)
    if (!string_is_empty(home))
    {
       menu_entries_append_enum(list, home,
+            msg_hash_to_str(MENU_ENUM_LABEL_FILE_DETECT_CORE_LIST_PUSH_DIR),
+            enum_idx,
+            FILE_TYPE_DIRECTORY, 0, 0);
+   }
+   if (path_is_directory(udisks_media_path))
+   {
+      menu_entries_append_enum(list, udisks_media_path,
             msg_hash_to_str(MENU_ENUM_LABEL_FILE_DETECT_CORE_LIST_PUSH_DIR),
             enum_idx,
             FILE_TYPE_DIRECTORY, 0, 0);
@@ -2130,14 +2272,47 @@ static void frontend_unix_exitspawn(char *s, size_t len, char *args)
 }
 #endif
 
-static uint64_t frontend_unix_get_mem_total(void)
+static uint64_t frontend_unix_get_total_mem(void)
 {
+#if defined(DINGUX)
+   char line[256];
+   unsigned long mem_total = 0;
+   FILE* meminfo_file      = NULL;
+
+   line[0] = '\0';
+
+   /* Open /proc/meminfo */
+   meminfo_file = fopen(PROC_MEMINFO_PATH, "r");
+
+   if (!meminfo_file)
+      return 0;
+
+   /* Parse lines
+    * (Note: virtual filesystem, so don't have to
+    *  worry about buffering file reads) */
+   while (fgets(line, sizeof(line), meminfo_file))
+   {
+      if (string_starts_with_size(line, PROC_MEMINFO_MEM_TOTAL_TAG,
+            STRLEN_CONST(PROC_MEMINFO_MEM_TOTAL_TAG)))
+      {
+         sscanf(line, PROC_MEMINFO_MEM_TOTAL_TAG " %lu kB", &mem_total);
+         break;
+      }
+   }
+
+   /* Close /proc/meminfo */
+   fclose(meminfo_file);
+   meminfo_file = NULL;
+
+   return (uint64_t)mem_total * 1024;
+#else
    uint64_t pages            = sysconf(_SC_PHYS_PAGES);
    uint64_t page_size        = sysconf(_SC_PAGE_SIZE);
    return pages * page_size;
+#endif
 }
 
-static uint64_t frontend_unix_get_mem_free(void)
+static uint64_t frontend_unix_get_free_mem(void)
 {
    char line[256];
    unsigned long mem_available = 0;
@@ -2532,17 +2707,17 @@ static bool accessibility_speak_unix(int speed,
    else if (speed > 10)
       speed = 10;
 
-   strlcpy(voice_out, "-v", 3);
+   strcpy_literal(voice_out, "-v");
    strlcat(voice_out, language, 5);
 
-   strlcpy(speed_out, "-s", 3);
+   strcpy_literal(speed_out, "-s");
    strlcat(speed_out, speeds[speed-1], 6);
 
    if (priority < 10 && speak_pid > 0)
    {
       /* check if old pid is running */
       if (is_narrator_running_unix())
-         return true;
+         goto end;
    }
 
    if (speak_pid > 0)
@@ -2563,25 +2738,31 @@ static bool accessibility_speak_unix(int speed,
       /* parent process */
       speak_pid = pid;
 
-      /* Tell the system that we'll ignore the exit status of the child 
+      /* Tell the system that we'll ignore the exit status of the child
        * process.  This prevents zombie processes. */
       signal(SIGCHLD,SIG_IGN);
    }
    else
-   { 
-      /* child process: replace process with the espeak command */ 
+   {
+      /* child process: replace process with the espeak command */
       char* cmd[] = { (char*) "espeak", NULL, NULL, NULL, NULL};
       cmd[1] = voice_out;
       cmd[2] = speed_out;
       cmd[3] = (char*)speak_text;
       execvp("espeak", cmd);
    }
+
+end:
+   if (voice_out)
+      free(voice_out);
+   if (speed_out)
+      free(speed_out);
    return true;
 }
 #endif
 
 frontend_ctx_driver_t frontend_ctx_unix = {
-   frontend_unix_get_env,       /* environment_get */
+   frontend_unix_get_env,       /* get_env */
    frontend_unix_init,          /* init */
    frontend_unix_deinit,        /* deinit */
 #ifdef ANDROID
@@ -2605,21 +2786,28 @@ frontend_ctx_driver_t frontend_ctx_unix = {
    NULL,                         /* get_name */
 #endif
    frontend_unix_get_os,
-   frontend_unix_get_rating,    /* get_rating */
-   NULL,                         /* load_content */
-   frontend_unix_get_architecture,
+   frontend_unix_get_rating,           /* get_rating */
+   NULL,                               /* content_loaded */
+   frontend_unix_get_arch,             /* get_architecture */
    frontend_unix_get_powerstate,
    frontend_unix_parse_drive_list,
-   frontend_unix_get_mem_total,
-   frontend_unix_get_mem_free,
+   frontend_unix_get_total_mem,
+   frontend_unix_get_free_mem,
    frontend_unix_install_signal_handlers,
    frontend_unix_get_signal_handler_state,
    frontend_unix_set_signal_handler_state,
    frontend_unix_destroy_signal_handler_state,
-   NULL,                         /* attach_console */
-   NULL,                         /* detach_console */
+   NULL,                               /* attach_console */
+   NULL,                               /* detach_console */
 #ifdef HAVE_LAKKA
    frontend_unix_get_lakka_version,    /* get_lakka_version */
+#else
+   NULL,                               /* get_lakka_version */
+#endif
+#if defined(HAVE_LAKKA_SWITCH) || (defined(HAVE_LAKKA) && defined(HAVE_ODROIDGO2))
+   frontend_unix_set_screen_brightness,/* set_screen_brightness */
+#else 
+   NULL,                         /* set_screen_brightness */
 #endif
    frontend_unix_watch_path_for_changes,
    frontend_unix_check_for_path_changes,
@@ -2627,15 +2815,16 @@ frontend_ctx_driver_t frontend_ctx_unix = {
    frontend_unix_get_cpu_model_name,
    frontend_unix_get_user_language,
 #if (defined(__linux__) || defined(__unix__)) && !defined(ANDROID)
-   is_narrator_running_unix,
-   accessibility_speak_unix,
+   is_narrator_running_unix,     /* is_narrator_running */
+   accessibility_speak_unix,     /* accessibility_speak */
 #else
    NULL,                         /* is_narrator_running */
    NULL,                         /* accessibility_speak */
 #endif
 #ifdef ANDROID
-   "android"
+   "android",                    /* ident               */
 #else
-   "unix"
+   "unix",                       /* ident               */
 #endif
+   NULL                          /* get_video_driver    */
 };

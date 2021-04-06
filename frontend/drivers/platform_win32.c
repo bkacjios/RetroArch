@@ -67,16 +67,16 @@
 #endif
 
 #ifdef HAVE_SAPI
-static ISpVoice* pVoice = NULL;
+static ISpVoice* pVoice        = NULL;
 #endif
 #ifdef HAVE_NVDA
-bool USE_POWERSHELL     = false;
-bool USE_NVDA           = true;
+static bool USE_POWERSHELL     = false;
+static bool USE_NVDA           = true;
 #else
-bool USE_POWERSHELL     = true;
-bool USE_NVDA           = false;
+static bool USE_POWERSHELL     = true;
+static bool USE_NVDA           = false;
 #endif
-bool USE_NVDA_BRAILLE   = false;
+static bool USE_NVDA_BRAILLE   = false;
 
 #ifndef SM_SERVERR2
 #define SM_SERVERR2 89
@@ -85,7 +85,7 @@ bool USE_NVDA_BRAILLE   = false;
 /* static public global variable */
 VOID (WINAPI *DragAcceptFiles_func)(HWND, BOOL);
 
-/* static global variables */
+/* TODO/FIXME - static global variables */
 static bool dwm_composition_disabled = false;
 static bool console_needs_free       = false;
 static char win32_cpu_model_name[64] = {0};
@@ -330,36 +330,36 @@ static void frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
    {
       case 10:
          if (server)
-            strlcpy(s, "Windows Server 2016", len);
+            strcpy_literal(s, "Windows Server 2016");
          else
-            strlcpy(s, "Windows 10", len);
+            strcpy_literal(s, "Windows 10");
          break;
       case 6:
          switch (vi.dwMinorVersion)
          {
             case 3:
                if (server)
-                  strlcpy(s, "Windows Server 2012 R2", len);
+                  strcpy_literal(s, "Windows Server 2012 R2");
                else
-                  strlcpy(s, "Windows 8.1", len);
+                  strcpy_literal(s, "Windows 8.1");
                break;
             case 2:
                if (server)
-                  strlcpy(s, "Windows Server 2012", len);
+                  strcpy_literal(s, "Windows Server 2012");
                else
-                  strlcpy(s, "Windows 8", len);
+                  strcpy_literal(s, "Windows 8");
                break;
             case 1:
                if (server)
-                  strlcpy(s, "Windows Server 2008 R2", len);
+                  strcpy_literal(s, "Windows Server 2008 R2");
                else
-                  strlcpy(s, "Windows 7", len);
+                  strcpy_literal(s, "Windows 7");
                break;
             case 0:
                if (server)
-                  strlcpy(s, "Windows Server 2008", len);
+                  strcpy_literal(s, "Windows Server 2008");
                else
-                  strlcpy(s, "Windows Vista", len);
+                  strcpy_literal(s, "Windows Vista");
                break;
             default:
                break;
@@ -371,7 +371,7 @@ static void frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
             case 2:
                if (server)
                {
-                  strlcpy(s, "Windows Server 2003", len);
+                  strcpy_literal(s, "Windows Server 2003");
                   if (GetSystemMetrics(SM_SERVERR2))
                      strlcat(s, " R2", len);
                }
@@ -379,14 +379,14 @@ static void frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
                {
                   /* Yes, XP Pro x64 is a higher version number than XP x86 */
                   if (string_is_equal(arch, "x64"))
-                     strlcpy(s, "Windows XP", len);
+                     strcpy_literal(s, "Windows XP");
                }
                break;
             case 1:
-               strlcpy(s, "Windows XP", len);
+               strcpy_literal(s, "Windows XP");
                break;
             case 0:
-               strlcpy(s, "Windows 2000", len);
+               strcpy_literal(s, "Windows 2000");
                break;
          }
          break;
@@ -395,17 +395,17 @@ static void frontend_win32_get_os(char *s, size_t len, int *major, int *minor)
          {
             case 0:
                if (vi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
-                  strlcpy(s, "Windows 95", len);
+                  strcpy_literal(s, "Windows 95");
                else if (vi.dwPlatformId == VER_PLATFORM_WIN32_NT)
-                  strlcpy(s, "Windows NT 4.0", len);
+                  strcpy_literal(s, "Windows NT 4.0");
                else
-                  strlcpy(s, "Unknown", len);
+                  strcpy_literal(s, "Unknown");
                break;
             case 90:
-               strlcpy(s, "Windows ME", len);
+               strcpy_literal(s, "Windows ME");
                break;
             case 10:
-               strlcpy(s, "Windows 98", len);
+               strcpy_literal(s, "Windows 98");
                break;
          }
          break;
@@ -512,7 +512,7 @@ enum frontend_powerstate frontend_win32_get_powerstate(int *seconds, int *percen
    return ret;
 }
 
-enum frontend_architecture frontend_win32_get_architecture(void)
+enum frontend_architecture frontend_win32_get_arch(void)
 {
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0500
    /* Windows 2000 and later */
@@ -565,9 +565,14 @@ static int frontend_win32_parse_drive_list(void *data, bool load_content)
    return 0;
 }
 
-static void frontend_win32_environment_get(int *argc, char *argv[],
+static void frontend_win32_env_get(int *argc, char *argv[],
       void *args, void *params_data)
 {
+   const char *tmp_dir = getenv("TMP");
+   if (!string_is_empty(tmp_dir))
+      fill_pathname_expand_special(g_defaults.dirs[DEFAULT_DIR_CACHE],
+         tmp_dir, sizeof(g_defaults.dirs[DEFAULT_DIR_CACHE]));
+
    gfx_set_dwm();
 
    fill_pathname_expand_special(g_defaults.dirs[DEFAULT_DIR_ASSETS],
@@ -622,6 +627,10 @@ static void frontend_win32_environment_get(int *argc, char *argv[],
       ":\\system", sizeof(g_defaults.dirs[DEFAULT_DIR_SYSTEM]));
    fill_pathname_expand_special(g_defaults.dirs[DEFAULT_DIR_LOGS],
       ":\\logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
+
+#ifndef IS_SALAMANDER
+   dir_check_defaults("custom.ini");
+#endif
 }
 
 static uint64_t frontend_win32_get_total_mem(void)
@@ -1105,9 +1114,9 @@ static bool accessibility_speak_windows(int speed,
 #endif
 
 frontend_ctx_driver_t frontend_ctx_win32 = {
-   frontend_win32_environment_get,
-   frontend_win32_init,
-   NULL,                           /* deinit */
+   frontend_win32_env_get,         /* env_get   */
+   frontend_win32_init,            /* init      */
+   NULL,                           /* deinit    */
 #if defined(_WIN32) && !defined(_XBOX)
    frontend_win32_respawn,         /* exitspawn */
 #else
@@ -1120,33 +1129,36 @@ frontend_ctx_driver_t frontend_ctx_win32 = {
 #else
    NULL,                           /* set_fork */
 #endif
-   NULL,                           /* shutdown */
-   NULL,                           /* get_name */
+   NULL,                           /* shutdown                  */
+   NULL,                           /* get_name                  */
    frontend_win32_get_os,
-   NULL,                           /* get_rating */
-   NULL,                           /* load_content */
-   frontend_win32_get_architecture,
+   NULL,                           /* get_rating                */
+   NULL,                           /* content_loaded            */
+   frontend_win32_get_arch,        /* get_architecture          */
    frontend_win32_get_powerstate,
    frontend_win32_parse_drive_list,
    frontend_win32_get_total_mem,
    frontend_win32_get_free_mem,
-   NULL,                            /* install_signal_handler */
-   NULL,                            /* get_sighandler_state */
-   NULL,                            /* set_sighandler_state */
+   NULL,                            /* install_signal_handler   */
+   NULL,                            /* get_sighandler_state     */
+   NULL,                            /* set_sighandler_state     */
    NULL,                            /* destroy_sighandler_state */
-   frontend_win32_attach_console,   /* attach_console */
-   frontend_win32_detach_console,   /* detach_console */
-   NULL,                            /* watch_path_for_changes */
-   NULL,                            /* check_for_path_changes */
+   frontend_win32_attach_console,   /* attach_console           */
+   frontend_win32_detach_console,   /* detach_console           */
+   NULL,                            /* get_lakka_version        */
+   NULL,                            /* set_screen_brightness    */
+   NULL,                            /* watch_path_for_changes   */
+   NULL,                            /* check_for_path_changes   */
    NULL,                            /* set_sustained_performance_mode */
    frontend_win32_get_cpu_model_name,
    frontend_win32_get_user_language,
 #if defined(_WIN32) && !defined(_XBOX)
-   is_narrator_running_windows,
-   accessibility_speak_windows,
+   is_narrator_running_windows,     /* is_narrator_running */
+   accessibility_speak_windows,     /* accessibility_speak */
 #else
-   NULL,                         /* is_narrator_running */
-   NULL,                         /* accessibility_speak */
+   NULL,                            /* is_narrator_running */
+   NULL,                            /* accessibility_speak */
 #endif
-   "win32"
+   "win32",                         /* ident               */
+   NULL                             /* get_video_driver    */
 };

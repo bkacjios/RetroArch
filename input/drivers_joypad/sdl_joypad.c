@@ -238,43 +238,49 @@ static void sdl_pad_disconnect(unsigned id)
 static void sdl_joypad_destroy(void)
 {
    unsigned i;
-#ifdef HAVE_SDL2
-   int subsystem = SDL_INIT_GAMECONTROLLER;
-#else
-   int subsystem = SDL_INIT_JOYSTICK;
-#endif
    for (i = 0; i < MAX_USERS; i++)
       sdl_pad_disconnect(i);
 
-   SDL_QuitSubSystem(subsystem);
    memset(sdl_pads, 0, sizeof(sdl_pads));
 }
 
-static bool sdl_joypad_init(void *data)
+static void *sdl_joypad_init(void *data)
 {
    unsigned i, num_sticks;
 #ifdef HAVE_SDL2
-   int subsystem = SDL_INIT_GAMECONTROLLER;
+   uint32_t subsystem           = SDL_INIT_GAMECONTROLLER;
 #else
-   int subsystem = SDL_INIT_JOYSTICK;
+   uint32_t subsystem           = SDL_INIT_JOYSTICK;
 #endif
+   uint32_t sdl_subsystem_flags = SDL_WasInit(0);
 
-   if (SDL_WasInit(0) == 0)
+   /* Initialise joystick/controller subsystem, if required */
+   if (sdl_subsystem_flags == 0)
    {
       if (SDL_Init(subsystem) < 0)
-         return false;
+         return NULL;
    }
-   else if (SDL_InitSubSystem(subsystem) < 0)
-      return false;
+   else if ((sdl_subsystem_flags & subsystem) == 0)
+   {
+      if (SDL_InitSubSystem(subsystem) < 0)
+         return NULL;
+   }
 
 #if HAVE_SDL2
    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
    SDL_SetHint("SDL_JOYSTICK_CALIBRATION_FILE", "/mnt/extsd/calibration.dat");
 
    g_has_haptic = false;
-   if (SDL_InitSubSystem(SDL_INIT_HAPTIC) < 0)
-      RARCH_WARN("[SDL]: Failed to initialize haptic device support: %s\n",
-            SDL_GetError());
+
+   /* Initialise haptic subsystem, if required */
+   if ((sdl_subsystem_flags & SDL_INIT_HAPTIC) == 0)
+   {
+      if (SDL_InitSubSystem(SDL_INIT_HAPTIC) < 0)
+         RARCH_WARN("[SDL]: Failed to initialize haptic device support: %s\n",
+               SDL_GetError());
+      else
+         g_has_haptic = true;
+   }
    else
       g_has_haptic = true;
 #endif
@@ -299,12 +305,13 @@ static bool sdl_joypad_init(void *data)
       goto error;
 #endif
 
-   return true;
+   return (void*)-1;
 
 #ifndef HAVE_SDL2
 error:
    sdl_joypad_destroy();
-   return false;
+
+   return NULL;
 #endif
 }
 

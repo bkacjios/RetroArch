@@ -34,30 +34,22 @@
 
 struct gfx_widget_achievement_popup_state
 {
-   gfx_timer_t timer;
-   float unfold;
-   float y;
-
-   unsigned width;
-   unsigned height;
-
-   cheevo_popup queue[CHEEVO_QUEUE_SIZE];
-   int queue_read_index;
-   int queue_write_index;
-
 #ifdef HAVE_THREADS
    slock_t* queue_lock;
 #endif
+   cheevo_popup queue[CHEEVO_QUEUE_SIZE]; /* ptr alignment */
+   int queue_read_index;
+   int queue_write_index;
+   unsigned width;
+   unsigned height;
+   gfx_timer_t timer;   /* float alignment */
+   float unfold;
+   float y;
 };
 
 typedef struct gfx_widget_achievement_popup_state gfx_widget_achievement_popup_state_t;
 
 static gfx_widget_achievement_popup_state_t p_w_achievement_popup_st;
-
-static gfx_widget_achievement_popup_state_t* gfx_widget_achievement_popup_get_ptr(void)
-{
-   return &p_w_achievement_popup_st;
-}
 
 /* Forward declarations */
 static void gfx_widget_achievement_popup_start(
@@ -67,7 +59,7 @@ static void gfx_widget_achievement_popup_free_current(
 
 static bool gfx_widget_achievement_popup_init(bool video_is_threaded, bool fullscreen)
 {
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   gfx_widget_achievement_popup_state_t* state = &p_w_achievement_popup_st;
    memset(state, 0, sizeof(*state));
 
    state->queue_read_index = -1;
@@ -75,10 +67,8 @@ static bool gfx_widget_achievement_popup_init(bool video_is_threaded, bool fulls
    return true;
 }
 
-static void gfx_widget_achievement_popup_free(void)
+static void gfx_widget_achievement_popup_free_all(gfx_widget_achievement_popup_state_t* state)
 {
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
-
    if (state->queue_read_index >= 0)
    {
       SLOCK_LOCK(state->queue_lock);
@@ -88,6 +78,13 @@ static void gfx_widget_achievement_popup_free(void)
 
       SLOCK_UNLOCK(state->queue_lock);
    }
+}
+
+static void gfx_widget_achievement_popup_free(void)
+{
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
+
+   gfx_widget_achievement_popup_free_all(state);
 
 #ifdef HAVE_THREADS
    slock_free(state->queue_lock);
@@ -95,9 +92,24 @@ static void gfx_widget_achievement_popup_free(void)
 #endif
 }
 
+static void gfx_widget_achievement_popup_context_destroy(void)
+{
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
+
+   gfx_widget_achievement_popup_free_all(state);
+}
+
 static void gfx_widget_achievement_popup_frame(void* data, void* userdata)
 {
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   static float pure_white[16]                 = {
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+   };
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
+   gfx_display_t            *p_disp  = disp_get_ptr();
+   gfx_display_ctx_driver_t *dispctx = p_disp->dispctx;
 
    /* if there's nothing in the queue, just bail */
    if (state->queue_read_index < 0 || !state->queue[state->queue_read_index].title)
@@ -108,44 +120,49 @@ static void gfx_widget_achievement_popup_frame(void* data, void* userdata)
    if (state->queue[state->queue_read_index].title)
    {
       const video_frame_info_t* video_info = (const video_frame_info_t*)data;
-      const unsigned video_width = video_info->width;
-      const unsigned video_height = video_info->height;
+      const unsigned video_width           = video_info->width;
+      const unsigned video_height          = video_info->height;
+      dispgfx_widget_t* p_dispwidget       = (dispgfx_widget_t*)userdata;
+      const unsigned unfold_offet          = ((1.0f - state->unfold) * 
+                                               state->width / 2);
+      int scissor_me_timbers               = 0;
 
-      dispgfx_widget_t* p_dispwidget = (dispgfx_widget_t*)userdata;
-      const unsigned unfold_offet = ((1.0f - state->unfold) * state->width / 2);
-
-      int scissor_me_timbers = 0;
-
-      gfx_display_set_alpha(gfx_widgets_get_backdrop_orig(), DEFAULT_BACKDROP);
-      gfx_display_set_alpha(gfx_widgets_get_pure_white(), 1.0f);
+      gfx_display_set_alpha(p_dispwidget->backdrop_orig, DEFAULT_BACKDROP);
+      gfx_display_set_alpha(pure_white, 1.0f);
 
       /* Default icon */
       if (!state->queue[state->queue_read_index].badge)
       {
          /* Backdrop */
-         gfx_display_draw_quad(video_info->userdata,
-            video_width, video_height,
-            0, (int)state->y,
-            state->height,
-            state->height,
-            video_width, video_height,
-            gfx_widgets_get_backdrop_orig());
+         gfx_display_draw_quad(
+               p_disp,
+               video_info->userdata,
+               video_width, video_height,
+               0, (int)state->y,
+               state->height,
+               state->height,
+               video_width, video_height,
+               p_dispwidget->backdrop_orig);
 
          /* Icon */
          if (p_dispwidget->gfx_widgets_icons_textures[MENU_WIDGETS_ICON_ACHIEVEMENT])
          {
-            gfx_display_blend_begin(video_info->userdata);
+            if (dispctx && dispctx->blend_begin)
+               dispctx->blend_begin(video_info->userdata);
             gfx_widgets_draw_icon(
                video_info->userdata,
+               p_disp,
                video_width,
                video_height,
                state->height,
                state->height,
-               p_dispwidget->gfx_widgets_icons_textures[MENU_WIDGETS_ICON_ACHIEVEMENT],
+               p_dispwidget->gfx_widgets_icons_textures[
+               MENU_WIDGETS_ICON_ACHIEVEMENT],
                0,
                state->y,
-               0, 1, gfx_widgets_get_pure_white());
-            gfx_display_blend_end(video_info->userdata);
+               0, 1, pure_white);
+            if (dispctx && dispctx->blend_end)
+               dispctx->blend_end(video_info->userdata);
          }
       }
       /* Badge */
@@ -153,6 +170,7 @@ static void gfx_widget_achievement_popup_frame(void* data, void* userdata)
       {
          gfx_widgets_draw_icon(
             video_info->userdata,
+            p_disp,
             video_width,
             video_height,
             state->height,
@@ -162,32 +180,35 @@ static void gfx_widget_achievement_popup_frame(void* data, void* userdata)
             state->y,
             0,
             1,
-            gfx_widgets_get_pure_white());
+            pure_white);
       }
 
       /* I _think_ state->unfold changes in another thread */
       scissor_me_timbers = (fabs(state->unfold - 1.0f) > 0.01);
       if (scissor_me_timbers)
-         gfx_display_scissor_begin(video_info->userdata,
-            video_width,
-            video_height,
-            state->height,
-            0,
-            (unsigned)((float)(state->width) * state->unfold),
-            state->height);
+         gfx_display_scissor_begin(
+               p_disp,
+               video_info->userdata,
+               video_width,
+               video_height,
+               state->height,
+               0,
+               (unsigned)((float)(state->width) * state->unfold),
+               state->height);
 
       /* Backdrop */
       gfx_display_draw_quad(
-         video_info->userdata,
-         video_width,
-         video_height,
-         state->height,
-         (int)state->y,
-         state->width,
-         state->height,
-         video_width,
-         video_height,
-         gfx_widgets_get_backdrop_orig());
+            p_disp,
+            video_info->userdata,
+            video_width,
+            video_height,
+            state->height,
+            (int)state->y,
+            state->width,
+            state->height,
+            video_width,
+            video_height,
+            p_dispwidget->backdrop_orig);
 
       /* Title */
       gfx_widgets_draw_text(&p_dispwidget->gfx_widget_fonts.regular,
@@ -218,15 +239,17 @@ static void gfx_widget_achievement_popup_frame(void* data, void* userdata)
       {
          gfx_widgets_flush_text(video_width, video_height,
             &p_dispwidget->gfx_widget_fonts.regular);
-         gfx_display_scissor_end(video_info->userdata,
-            video_width, video_height);
+         if (dispctx && dispctx->scissor_end)
+            dispctx->scissor_end(video_info->userdata,
+                  video_width, video_height);
       }
    }
 
    SLOCK_UNLOCK(state->queue_lock);
 }
 
-static void gfx_widget_achievement_popup_free_current(gfx_widget_achievement_popup_state_t* state)
+static void gfx_widget_achievement_popup_free_current(
+      gfx_widget_achievement_popup_state_t* state)
 {
    if (state->queue[state->queue_read_index].title)
    {
@@ -245,7 +268,7 @@ static void gfx_widget_achievement_popup_free_current(gfx_widget_achievement_pop
 
 static void gfx_widget_achievement_popup_next(void* userdata)
 {
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
 
    SLOCK_LOCK(state->queue_lock);
 
@@ -264,8 +287,9 @@ static void gfx_widget_achievement_popup_next(void* userdata)
 static void gfx_widget_achievement_popup_dismiss(void *userdata)
 {
    gfx_animation_ctx_entry_t entry;
-   const dispgfx_widget_t *p_dispwidget = (const dispgfx_widget_t*)dispwidget_get_ptr();
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   const dispgfx_widget_t        *p_dispwidget = (const dispgfx_widget_t*)
+      dispwidget_get_ptr();
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
 
    /* Slide up animation */
    entry.cb             = gfx_widget_achievement_popup_next;
@@ -282,8 +306,9 @@ static void gfx_widget_achievement_popup_dismiss(void *userdata)
 static void gfx_widget_achievement_popup_fold(void *userdata)
 {
    gfx_animation_ctx_entry_t entry;
-   const dispgfx_widget_t *p_dispwidget = (const dispgfx_widget_t*)dispwidget_get_ptr();
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   const dispgfx_widget_t        *p_dispwidget = (const dispgfx_widget_t*)
+      dispwidget_get_ptr();
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
 
    /* Fold */
    entry.cb             = gfx_widget_achievement_popup_dismiss;
@@ -301,8 +326,9 @@ static void gfx_widget_achievement_popup_unfold(void *userdata)
 {
    gfx_timer_ctx_entry_t timer;
    gfx_animation_ctx_entry_t entry;
-   const dispgfx_widget_t *p_dispwidget = (const dispgfx_widget_t*)dispwidget_get_ptr();
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   const dispgfx_widget_t        *p_dispwidget = (const dispgfx_widget_t*)
+      dispwidget_get_ptr();
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
 
    /* Unfold */
    entry.cb             = NULL;
@@ -320,7 +346,7 @@ static void gfx_widget_achievement_popup_unfold(void *userdata)
    timer.duration = MSG_QUEUE_ANIMATION_DURATION + CHEEVO_NOTIFICATION_DURATION;
    timer.userdata = NULL;
 
-   gfx_timer_start(&state->timer, &timer);
+   gfx_animation_timer_start(&state->timer, &timer);
 }
 
 static void gfx_widget_achievement_popup_start(
@@ -356,7 +382,7 @@ static void gfx_widget_achievement_popup_start(
 
 void gfx_widgets_push_achievement(const char *title, const char *badge)
 {
-   gfx_widget_achievement_popup_state_t* state = gfx_widget_achievement_popup_get_ptr();
+   gfx_widget_achievement_popup_state_t *state = &p_w_achievement_popup_st;
    int start_notification = 1;
 
    /* important - this must be done outside the lock because it has the potential to need to
@@ -405,7 +431,7 @@ const gfx_widget_t gfx_widget_achievement_popup = {
    &gfx_widget_achievement_popup_init,
    &gfx_widget_achievement_popup_free,
    NULL, /* context_reset*/
-   NULL, /* context_destroy */
+   &gfx_widget_achievement_popup_context_destroy,
    NULL, /* layout */
    NULL, /* iterate */
    &gfx_widget_achievement_popup_frame

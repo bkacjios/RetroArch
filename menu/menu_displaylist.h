@@ -23,6 +23,7 @@
 #include <retro_common_api.h>
 #include <lists/file_list.h>
 
+#include "../configuration.h"
 #include "../msg_hash.h"
 #include "../setting_list.h"
 
@@ -67,6 +68,8 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_DROPDOWN_LIST_MANUAL_CONTENT_SCAN_SYSTEM_NAME,
    DISPLAYLIST_DROPDOWN_LIST_MANUAL_CONTENT_SCAN_CORE_NAME,
    DISPLAYLIST_DROPDOWN_LIST_DISK_INDEX,
+   DISPLAYLIST_DROPDOWN_LIST_INPUT_DEVICE_TYPE,
+   DISPLAYLIST_DROPDOWN_LIST_INPUT_DEVICE_INDEX,
    DISPLAYLIST_DROPDOWN_LIST_INPUT_DESCRIPTION,
    DISPLAYLIST_DROPDOWN_LIST_INPUT_DESCRIPTION_KBD,
    DISPLAYLIST_CDROM_DETAIL_INFO,
@@ -104,6 +107,7 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_LAKKA,
    DISPLAYLIST_CORES_DETECTED,
    DISPLAYLIST_CORE_OPTIONS,
+   DISPLAYLIST_CORE_OPTION_OVERRIDE_LIST,
    DISPLAYLIST_CORE_INFO,
    DISPLAYLIST_DISC_INFO,
    DISPLAYLIST_PERFCOUNTERS_CORE,
@@ -127,6 +131,7 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_CONTENT_HISTORY,
    DISPLAYLIST_IMAGES,
    DISPLAYLIST_FONTS,
+   DISPLAYLIST_VIDEO_FONTS,
    DISPLAYLIST_LOAD_DISC,
    DISPLAYLIST_DUMP_DISC,
    DISPLAYLIST_OVERLAYS,
@@ -139,6 +144,7 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_SHADER_PRESET_REMOVE,
    DISPLAYLIST_NETWORK_INFO,
    DISPLAYLIST_SYSTEM_INFO,
+   DISPLAYLIST_ACHIEVEMENT_PAUSE_MENU,
    DISPLAYLIST_ACHIEVEMENT_LIST,
    DISPLAYLIST_USER_BINDS_LIST,
    DISPLAYLIST_ACCOUNTS_LIST,
@@ -167,6 +173,7 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_AUDIO_MIXER_SETTINGS_LIST,
    DISPLAYLIST_CORE_SETTINGS_LIST,
    DISPLAYLIST_INPUT_SETTINGS_LIST,
+   DISPLAYLIST_INPUT_TURBO_FIRE_SETTINGS_LIST,
    DISPLAYLIST_INPUT_HAPTIC_FEEDBACK_SETTINGS_LIST,
    DISPLAYLIST_INPUT_MENU_SETTINGS_LIST,
    DISPLAYLIST_LATENCY_SETTINGS_LIST,
@@ -207,6 +214,7 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_ACCOUNTS_CHEEVOS_LIST,
    DISPLAYLIST_ACCOUNTS_YOUTUBE_LIST,
    DISPLAYLIST_ACCOUNTS_TWITCH_LIST,
+   DISPLAYLIST_ACCOUNTS_FACEBOOK_LIST,
    DISPLAYLIST_BROWSE_URL_LIST,
    DISPLAYLIST_BROWSE_URL_START,
    DISPLAYLIST_LOAD_CONTENT_LIST,
@@ -234,7 +242,6 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_CORE_CONTENT_DIRS_SUBDIR,
 #ifdef HAVE_LAKKA_SWITCH
    DISPLAYLIST_SWITCH_GPU_PROFILE,
-   DISPLAYLIST_SWITCH_BACKLIGHT_CONTROL,
 #endif
 #if defined(HAVE_LAKKA_SWITCH) || defined(HAVE_LIBNX)
    DISPLAYLIST_SWITCH_CPU_PROFILE,
@@ -243,7 +250,8 @@ enum menu_displaylist_ctl_state
    DISPLAYLIST_MANUAL_CONTENT_SCAN_DAT_FILES,
    DISPLAYLIST_CORE_RESTORE_BACKUP_LIST,
    DISPLAYLIST_CORE_DELETE_BACKUP_LIST,
-   DISPLAYLIST_PENDING_CLEAR
+   DISPLAYLIST_PENDING_CLEAR,
+   DISPLAYLIST_WIFI_NETWORKS_LIST
 };
 
 enum filebrowser_enums
@@ -256,12 +264,29 @@ enum filebrowser_enums
    FILEBROWSER_SELECT_FILE,
    FILEBROWSER_SELECT_FILE_SUBSYSTEM,
    FILEBROWSER_SELECT_IMAGE,
-   FILEBROWSER_SELECT_FONT,
+   FILEBROWSER_SELECT_VIDEO_FONT,
    FILEBROWSER_SELECT_COLLECTION
 };
 
 typedef struct menu_displaylist_info
 {
+   char *path;
+   char *path_b;
+   char *path_c;
+   char *exts;
+   char *label;
+   file_list_t *list;
+   file_list_t *menu_list;
+   rarch_setting_t *setting;
+
+   size_t directory_ptr;
+
+   unsigned count;
+
+   unsigned type;
+   unsigned type_default;
+   unsigned flags;
+
    enum msg_hash_enums enum_idx;
    /* should the displaylist be sorted by alphabet? */
    bool need_sort;
@@ -279,52 +304,25 @@ typedef struct menu_displaylist_info
    bool download_core;
    /* does the navigation index need to be cleared to 0 (first entry) ? */
    bool need_navigation_clear;
-
-   unsigned count;
-
-   char *path;
-   char *path_b;
-   char *path_c;
-   char *exts;
-   char *label;
-   unsigned type;
-   unsigned type_default;
-   unsigned flags;
-   size_t directory_ptr;
-   file_list_t *list;
-   file_list_t *menu_list;
-   rarch_setting_t *setting;
 } menu_displaylist_info_t;
 
-typedef struct menu_displaylist_ctx_parse_entry
-{
-   enum msg_hash_enums enum_idx;
-   enum menu_displaylist_parse_type parse_type;
-   bool add_empty_entry;
-   const char *info_label;
-   void *data;
-   menu_displaylist_info_t *info;
-} menu_displaylist_ctx_parse_entry_t;
+#define MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list, label, parse_type, add_empty_entry) menu_displaylist_parse_settings_enum(list, parse_type, add_empty_entry, menu_setting_find_enum(label), label, true)
 
-typedef struct menu_displaylist_ctx_entry
-{
-   file_list_t *stack;
-   file_list_t *list;
-} menu_displaylist_ctx_entry_t;
+#define MENU_DISPLAYLIST_PARSE_SETTINGS(list, label, parse_type, add_empty_entry, entry_type) menu_displaylist_parse_settings_enum(list, parse_type, add_empty_entry, menu_setting_find(label), entry_type, false)
 
 bool menu_displaylist_process(menu_displaylist_info_t *info);
 
-bool menu_displaylist_push(menu_displaylist_ctx_entry_t *entry);
-
 void menu_displaylist_info_free(menu_displaylist_info_t *info);
 
-unsigned menu_displaylist_build_list(file_list_t *list, enum menu_displaylist_ctl_state type, bool include_everything);
+unsigned menu_displaylist_build_list(
+      file_list_t *list,
+      settings_t *settings,
+      enum menu_displaylist_ctl_state type,
+      bool include_everything);
 
 void menu_displaylist_info_init(menu_displaylist_info_t *info);
 
-bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, menu_displaylist_info_t *info);
-
-bool menu_displaylist_setting(menu_displaylist_ctx_parse_entry_t *entry);
+bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, menu_displaylist_info_t *info, settings_t *settings);
 
 #ifdef HAVE_NETWORKING
 unsigned menu_displaylist_netplay_refresh_rooms(file_list_t *list);
@@ -341,6 +339,15 @@ enum filebrowser_enums filebrowser_get_type(void);
 void filebrowser_clear_type(void);
 
 void filebrowser_set_type(enum filebrowser_enums type);
+
+int menu_displaylist_parse_settings_enum(
+      file_list_t *info_list,
+      enum menu_displaylist_parse_type parse_type,
+      bool add_empty_entry,
+      rarch_setting_t *setting,
+      unsigned entry_type,
+      bool is_enum
+      );
 
 RETRO_END_DECLS
 

@@ -50,7 +50,7 @@
 #include "SDL.h"
 #endif
 
-#if defined(__linux__) || defined(__linux__) && defined(HAVE_WAYLAND)
+#if defined(__linux__) || defined(HAVE_WAYLAND)
 #include <linux/input.h>
 #include <linux/kd.h>
 #endif
@@ -70,105 +70,6 @@
 
 #ifdef __APPLE__
 #include "drivers_keyboard/keyboard_event_apple.h"
-
-const struct apple_key_name_map_entry apple_key_name_map[] =
-{
-   { "left", KEY_Left },
-   { "right", KEY_Right },
-   { "up", KEY_Up },
-   { "down", KEY_Down },
-   { "enter", KEY_Enter },
-   { "kp_enter", KP_Enter },
-   { "space", KEY_Space },
-   { "tab", KEY_Tab },
-   { "shift", KEY_LeftShift },
-   { "rshift", KEY_RightShift },
-   { "ctrl", KEY_LeftControl },
-   { "alt", KEY_LeftAlt },
-   { "escape", KEY_Escape },
-   { "backspace", KEY_DeleteForward },
-   { "backquote", KEY_Grave },
-   { "pause", KEY_Pause },
-   { "f1", KEY_F1 },
-   { "f2", KEY_F2 },
-   { "f3", KEY_F3 },
-   { "f4", KEY_F4 },
-   { "f5", KEY_F5 },
-   { "f6", KEY_F6 },
-   { "f7", KEY_F7 },
-   { "f8", KEY_F8 },
-   { "f9", KEY_F9 },
-   { "f10", KEY_F10 },
-   { "f11", KEY_F11 },
-   { "f12", KEY_F12 },
-   { "num0", KEY_0 },
-   { "num1", KEY_1 },
-   { "num2", KEY_2 },
-   { "num3", KEY_3 },
-   { "num4", KEY_4 },
-   { "num5", KEY_5 },
-   { "num6", KEY_6 },
-   { "num7", KEY_7 },
-   { "num8", KEY_8 },
-   { "num9", KEY_9 },
-
-   { "insert", KEY_Insert },
-   { "del", KEY_DeleteForward },
-   { "home", KEY_Home },
-   { "end", KEY_End },
-   { "pageup", KEY_PageUp },
-   { "pagedown", KEY_PageDown },
-
-   { "add", KP_Add },
-   { "subtract", KP_Subtract },
-   { "multiply", KP_Multiply },
-   { "divide", KP_Divide },
-   { "keypad0", KP_0 },
-   { "keypad1", KP_1 },
-   { "keypad2", KP_2 },
-   { "keypad3", KP_3 },
-   { "keypad4", KP_4 },
-   { "keypad5", KP_5 },
-   { "keypad6", KP_6 },
-   { "keypad7", KP_7 },
-   { "keypad8", KP_8 },
-   { "keypad9", KP_9 },
-
-   { "period", KEY_Period },
-   { "capslock", KEY_CapsLock },
-   { "numlock", KP_NumLock },
-   { "print_screen", KEY_PrintScreen },
-   { "scroll_lock", KEY_ScrollLock },
-
-   { "a", KEY_A },
-   { "b", KEY_B },
-   { "c", KEY_C },
-   { "d", KEY_D },
-   { "e", KEY_E },
-   { "f", KEY_F },
-   { "g", KEY_G },
-   { "h", KEY_H },
-   { "i", KEY_I },
-   { "j", KEY_J },
-   { "k", KEY_K },
-   { "l", KEY_L },
-   { "m", KEY_M },
-   { "n", KEY_N },
-   { "o", KEY_O },
-   { "p", KEY_P },
-   { "q", KEY_Q },
-   { "r", KEY_R },
-   { "s", KEY_S },
-   { "t", KEY_T },
-   { "u", KEY_U },
-   { "v", KEY_V },
-   { "w", KEY_W },
-   { "x", KEY_X },
-   { "y", KEY_Y },
-   { "z", KEY_Z },
-
-   { "nul", 0x00},
-};
 #endif
 
 const struct input_key_map input_config_key_map[] = {
@@ -422,7 +323,7 @@ const struct rarch_key_map rarch_key_map_switch[] = {
 #endif
 
 #ifdef VITA
-// Vita scancodes are identical to USB 2.0 standard, e.g. SDL2
+/* Vita scancodes are identical to USB 2.0 standard, e.g. SDL2 */
 const struct rarch_key_map rarch_key_map_vita[] = {
    { 0x02A, RETROK_BACKSPACE },
    { 0x02B, RETROK_TAB },
@@ -763,12 +664,17 @@ const struct rarch_key_map rarch_key_map_dinput[] = {
    { DIK_DELETE, RETROK_DELETE },
    { DIK_RSHIFT, RETROK_RSHIFT },
    { DIK_LSHIFT, RETROK_LSHIFT },
+   { DIK_RCONTROL, RETROK_RCTRL },
    { DIK_LCONTROL, RETROK_LCTRL },
+   { DIK_RMENU, RETROK_RALT },
+   { DIK_LALT, RETROK_LALT },
+   { DIK_LWIN, RETROK_LSUPER },
+   { DIK_RWIN, RETROK_RSUPER },
+   { DIK_APPS, RETROK_MENU },
    { DIK_END, RETROK_END },
    { DIK_HOME, RETROK_HOME },
    { DIK_NEXT, RETROK_PAGEDOWN },
    { DIK_PRIOR, RETROK_PAGEUP },
-   { DIK_LALT, RETROK_LALT },
    { DIK_SPACE, RETROK_SPACE },
    { DIK_ESCAPE, RETROK_ESCAPE },
    { DIK_BACKSPACE, RETROK_BACKSPACE },
@@ -811,6 +717,9 @@ const struct rarch_key_map rarch_key_map_dinput[] = {
    { DIK_F10, RETROK_F10 },
    { DIK_F11, RETROK_F11 },
    { DIK_F12, RETROK_F12 },
+   { DIK_F13, RETROK_F13 },
+   { DIK_F14, RETROK_F14 },
+   { DIK_F15, RETROK_F15 },
    { DIK_A, RETROK_a },
    { DIK_B, RETROK_b },
    { DIK_C, RETROK_c },
@@ -847,8 +756,6 @@ const struct rarch_key_map rarch_key_map_dinput[] = {
    { DIK_BACKSLASH, RETROK_BACKSLASH },
    { DIK_RBRACKET, RETROK_RIGHTBRACKET },
    { DIK_DECIMAL, RETROK_KP_PERIOD },
-   { DIK_RCONTROL, RETROK_RCTRL },
-   { DIK_RMENU, RETROK_RALT },
    { DIK_PERIOD, RETROK_PERIOD },
    { DIK_SCROLL, RETROK_SCROLLOCK },
    { DIK_CAPSLOCK, RETROK_CAPSLOCK },
@@ -1094,11 +1001,18 @@ const struct rarch_key_map rarch_key_map_x11[] = {
 #endif
 
 #if defined(__linux__) || defined(HAVE_WAYLAND)
+/* Note: Only one input can be mapped to each
+ * RETROK_* key. If several physical inputs
+ * correspond to the same key, these inputs
+ * must be merged at the input driver level */
 const struct rarch_key_map rarch_key_map_linux[] = {
    { KEY_BACKSPACE, RETROK_BACKSPACE },
    { KEY_TAB, RETROK_TAB },
    { KEY_CLEAR, RETROK_CLEAR },
+   /* { KEY_EXIT, RETROK_CLEAR }, */     /* Duplicate - Skip */
    { KEY_ENTER, RETROK_RETURN },
+   /* { KEY_OK, RETROK_RETURN }, */      /* Duplicate - Skip */
+   /* { KEY_SELECT, RETROK_RETURN }, */  /* Duplicate - Skip */
    { KEY_PAUSE, RETROK_PAUSE },
    { KEY_ESC, RETROK_ESCAPE },
    { KEY_SPACE, RETROK_SPACE },
@@ -1895,7 +1809,7 @@ const struct rarch_key_map rarch_key_map_winraw[] = {
    { VK_RCONTROL, RETROK_RCTRL },
    { VK_LMENU, RETROK_LALT },
    { VK_RMENU, RETROK_RALT },
-   { VK_RETURN, RETROK_KP_ENTER },
+   { 0xE0, RETROK_KP_ENTER },
    { VK_CAPITAL, RETROK_CAPSLOCK },
    { VK_OEM_1, RETROK_SEMICOLON },
    { VK_OEM_PLUS, RETROK_EQUALS },
@@ -1908,6 +1822,7 @@ const struct rarch_key_map rarch_key_map_winraw[] = {
    { VK_OEM_5, RETROK_BACKSLASH },
    { VK_OEM_6, RETROK_RIGHTBRACKET },
    { VK_OEM_7, RETROK_QUOTE },
+   { VK_OEM_102, RETROK_OEM_102 },
    { 0, RETROK_UNKNOWN }
 };
 #endif

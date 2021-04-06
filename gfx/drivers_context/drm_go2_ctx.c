@@ -97,7 +97,7 @@ static void gfx_ctx_go2_drm_input_driver(void *data,
 {
 #ifdef HAVE_UDEV
    /* Try to set it to udev instead */
-   void *udev = input_udev.init(joypad_name);
+   void *udev = input_driver_init_wrap(&input_udev, joypad_name);
    if (udev)
    {
       *input       = &input_udev;
@@ -118,10 +118,20 @@ static void *gfx_ctx_go2_drm_init(void *video_driver)
    if (!drm)
       return NULL;
 
-   drm->native_width  = 480;
-   drm->native_height = 320;
-
    drm->display       = go2_display_create();
+
+   drm->native_width  = go2_display_height_get(drm->display);
+   drm->native_height = go2_display_width_get(drm->display);
+
+   /* This driver should only be used on rotated screens */
+   if (drm->native_width < drm->native_height)
+   {
+      /* This should be fixed by using wayland/weston... */
+      go2_display_destroy(drm->display);
+      free(drm);
+      return NULL;
+   }
+
    drm->presenter     = go2_presenter_create(drm->display,
          DRM_FORMAT_RGB565, 0xff000000, true);
 
@@ -311,8 +321,8 @@ static void gfx_ctx_go2_drm_swap_buffers(void *data)
    if (out_w != src_w || out_h != src_h)
    {
        out_w = out_h * video_driver_get_aspect_ratio();
-       out_w = (out_w > 480) ? 480 : out_w;
-       out_x = (480 - out_w) / 2;
+       out_w = (out_w > drm->native_width) ? drm->native_width : out_w;
+       out_x = (drm->native_width - out_w) / 2;
        if (out_x < 0)
            out_x = 0;
     }

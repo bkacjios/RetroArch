@@ -59,6 +59,8 @@ enum
    ACTION_OK_DL_DROPDOWN_BOX_LIST_MANUAL_CONTENT_SCAN_SYSTEM_NAME,
    ACTION_OK_DL_DROPDOWN_BOX_LIST_MANUAL_CONTENT_SCAN_CORE_NAME,
    ACTION_OK_DL_DROPDOWN_BOX_LIST_DISK_INDEX,
+   ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_DEVICE_TYPE,
+   ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_DEVICE_INDEX,
    ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_DESCRIPTION,
    ACTION_OK_DL_DROPDOWN_BOX_LIST_INPUT_DESCRIPTION_KBD,
    ACTION_OK_DL_OPEN_ARCHIVE,
@@ -73,6 +75,12 @@ enum
    ACTION_OK_DL_RDB_ENTRY_SUBMENU,
    ACTION_OK_DL_CDROM_INFO_LIST,
    ACTION_OK_DL_AUDIO_DSP_PLUGIN,
+   ACTION_OK_DL_VIDEO_FILTER,
+   ACTION_OK_DL_OVERLAY_PRESET,
+#if defined(HAVE_VIDEO_LAYOUT)
+   ACTION_OK_DL_VIDEO_LAYOUT,
+#endif
+   ACTION_OK_DL_VIDEO_FONT,
    ACTION_OK_DL_SHADER_PASS,
    ACTION_OK_DL_FAVORITES_LIST,
    ACTION_OK_DL_IMAGES_LIST,
@@ -88,6 +96,7 @@ enum
    ACTION_OK_DL_FILE_BROWSER_SELECT_FILE,
    ACTION_OK_DL_FILE_BROWSER_SELECT_DIR,
    ACTION_OK_DL_INPUT_SETTINGS_LIST,
+   ACTION_OK_DL_INPUT_TURBO_FIRE_SETTINGS_LIST,
    ACTION_OK_DL_INPUT_HAPTIC_FEEDBACK_SETTINGS_LIST,
    ACTION_OK_DL_REMAPPINGS_PORT_LIST,
    ACTION_OK_DL_INPUT_MENU_SETTINGS_LIST,
@@ -124,6 +133,7 @@ enum
    ACTION_OK_DL_ACCOUNTS_CHEEVOS_LIST,
    ACTION_OK_DL_ACCOUNTS_YOUTUBE_LIST,
    ACTION_OK_DL_ACCOUNTS_TWITCH_LIST,
+   ACTION_OK_DL_ACCOUNTS_FACEBOOK_LIST,
    ACTION_OK_DL_USER_BINDS_LIST,
    ACTION_OK_DL_CONTENT_LIST,
    ACTION_OK_DL_REMAP_FILE,
@@ -178,9 +188,11 @@ enum
    ACTION_OK_DL_MENU_SOUNDS_LIST,
    ACTION_OK_DL_MENU_FILE_BROWSER_SETTINGS_LIST,
    ACTION_OK_DL_RETRO_ACHIEVEMENTS_SETTINGS_LIST,
+   ACTION_OK_DL_ACHIEVEMENTS_HARDCORE_PAUSE_LIST,
    ACTION_OK_DL_UPDATER_SETTINGS_LIST,
    ACTION_OK_DL_BLUETOOTH_SETTINGS_LIST,
    ACTION_OK_DL_WIFI_SETTINGS_LIST,
+   ACTION_OK_DL_WIFI_NETWORKS_LIST,
    ACTION_OK_DL_NETWORK_SETTINGS_LIST,
    ACTION_OK_DL_SUBSYSTEM_SETTINGS_LIST,
    ACTION_OK_DL_NETWORK_HOSTING_SETTINGS_LIST,
@@ -199,7 +211,8 @@ enum
    ACTION_OK_DL_MANUAL_CONTENT_SCAN_LIST,
    ACTION_OK_DL_MANUAL_CONTENT_SCAN_DAT_FILE,
    ACTION_OK_DL_CORE_RESTORE_BACKUP_LIST,
-   ACTION_OK_DL_CORE_DELETE_BACKUP_LIST
+   ACTION_OK_DL_CORE_DELETE_BACKUP_LIST,
+   ACTION_OK_DL_CORE_OPTION_OVERRIDE_LIST
 };
 
 /* Function callbacks */
@@ -208,8 +221,6 @@ int action_cb_push_dropdown_item_resolution(const char *path,
 
 int action_cancel_pop_default(const char *path,
       const char *label, unsigned type, size_t idx);
-
-int action_refresh_default(file_list_t *list, file_list_t *menu_list);
 
 int shader_action_parameter_right(unsigned type, const char *label, bool wraparound);
 int shader_action_preset_parameter_right(unsigned type, const char *label, bool wraparound);
@@ -239,6 +250,10 @@ int core_setting_right(unsigned type, const char *label,
 int action_right_cheat(unsigned type, const char *label,
       bool wraparound);
 
+void input_keyboard_mapping_bits(unsigned mode, unsigned key);
+
+unsigned libretro_device_get_size(unsigned *devices, size_t devices_size, unsigned port);
+
 /* End of function callbacks */
 
 int menu_cbs_init_bind_left(menu_file_list_cbs_t *cbs,
@@ -249,9 +264,6 @@ int menu_cbs_init_bind_right(menu_file_list_cbs_t *cbs,
       const char *path, const char *label, unsigned type, size_t idx,
       const char *menu_label);
 
-int menu_cbs_init_bind_refresh(menu_file_list_cbs_t *cbs,
-      const char *path, const char *label, unsigned type, size_t idx);
-
 int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
       const char *path, const char *label, unsigned type, size_t idx);
 
@@ -261,19 +273,10 @@ int menu_cbs_init_bind_label(menu_file_list_cbs_t *cbs,
 int menu_cbs_init_bind_sublabel(menu_file_list_cbs_t *cbs,
       const char *path, const char *label, unsigned type, size_t idx);
 
-int menu_cbs_init_bind_up(menu_file_list_cbs_t *cbs,
-      const char *path, const char *label, unsigned type, size_t idx);
-
-int menu_cbs_init_bind_down(menu_file_list_cbs_t *cbs,
-      const char *path, const char *label, unsigned type, size_t idx);
-
 int menu_cbs_init_bind_info(menu_file_list_cbs_t *cbs,
       const char *path, const char *label, unsigned type, size_t idx);
 
 int menu_cbs_init_bind_start(menu_file_list_cbs_t *cbs,
-      const char *path, const char *label, unsigned type, size_t idx);
-
-int menu_cbs_init_bind_content_list_switch(menu_file_list_cbs_t *cbs,
       const char *path, const char *label, unsigned type, size_t idx);
 
 int menu_cbs_init_bind_cancel(menu_file_list_cbs_t *cbs,

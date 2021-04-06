@@ -582,7 +582,7 @@ static void iohidmanager_hid_device_add_autodetect(unsigned idx,
    input_autoconfigure_connect(
          device_name,
          NULL,
-         driver_name,
+         "hid",
          idx,
          dev_vid,
          dev_pid
@@ -684,6 +684,9 @@ static void iohidmanager_hid_device_add_device(
    if (adapter->slot == -1)
       goto error;
 
+   if (string_is_empty(adapter->name))
+      strcpy(adapter->name, "Unknown Controller With No Name");
+   
    if (pad_connection_has_interface(hid->slots, adapter->slot))
       IOHIDDeviceRegisterInputReportCallback(device,
             adapter->data + 1, sizeof(adapter->data) - 1,
@@ -691,9 +694,6 @@ static void iohidmanager_hid_device_add_device(
    else
       IOHIDDeviceRegisterInputValueCallback(device,
             iohidmanager_hid_device_input_callback, adapter);
-
-   if (string_is_empty(adapter->name))
-      goto error;
 
    /* scan for buttons, axis, hats */
    elements_raw = IOHIDDeviceCopyMatchingElements(device, NULL, kIOHIDOptionsTypeNone);
@@ -725,14 +725,6 @@ static void iohidmanager_hid_device_add_device(
          case kHIDPage_GenericDesktop:
             switch (type)
             {
-               case kIOHIDElementTypeCollection:
-               case kIOHIDElementTypeInput_ScanCodes:
-               case kIOHIDElementTypeFeature:
-               case kIOHIDElementTypeInput_Button:
-               case kIOHIDElementTypeOutput:
-               case kIOHIDElementTypeInput_Axis:
-                  /* TODO/FIXME */
-                  break;
                case kIOHIDElementTypeInput_Misc:
                   switch (use)
                   {
@@ -784,22 +776,21 @@ static void iohidmanager_hid_device_add_device(
                         break;
                   }
                   break;
+               default:
+                  /* TODO/FIXME */
+                  break;
             }
             break;
          case kHIDPage_Consumer:
          case kHIDPage_Button:
             switch (type)
             {
-               case kIOHIDElementTypeCollection:
-               case kIOHIDElementTypeFeature:
-               case kIOHIDElementTypeInput_ScanCodes:
-               case kIOHIDElementTypeInput_Axis:
-               case kIOHIDElementTypeOutput:
-                  /* TODO/FIXME */
-                  break;
                case kIOHIDElementTypeInput_Misc:
                case kIOHIDElementTypeInput_Button:
                   detected_button = 1;
+                  break;
+               default:
+                  /* TODO/FIXME */
                   break;
             }
             break;

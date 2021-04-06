@@ -98,8 +98,6 @@ static void gfx_display_d3d9_blend_end(void *data)
    d3d9_disable_blend_func(d3d->dev);
 }
 
-static void gfx_display_d3d9_viewport(gfx_display_ctx_draw_t *draw, void *data) { }
-
 static void gfx_display_d3d9_bind_texture(gfx_display_ctx_draw_t *draw,
       d3d9_video_t *d3d)
 {
@@ -125,7 +123,7 @@ static void gfx_display_d3d9_draw(gfx_display_ctx_draw_t *draw,
    const float *tex_coord        = NULL;
    const float *color            = NULL;
 
-   if (!d3d || !draw || draw->pipeline.id)
+   if (!d3d || !draw || draw->pipeline_id)
       return;
 
    dev                           = d3d->dev;
@@ -219,11 +217,12 @@ static void gfx_display_d3d9_draw_pipeline(gfx_display_ctx_draw_t *draw,
 #if defined(HAVE_HLSL) || defined(HAVE_CG)
    static float t                    = 0;
    video_coord_array_t *ca           = NULL;
+   gfx_display_t *p_disp             = disp_get_ptr();
 
    if (!draw)
       return;
 
-   ca                                = gfx_display_get_coords_array();
+   ca                                = &p_disp->dispca;
 
    draw->x                           = 0;
    draw->y                           = 0;
@@ -233,7 +232,7 @@ static void gfx_display_d3d9_draw_pipeline(gfx_display_ctx_draw_t *draw,
    if (ca)
       draw->coords                   = (struct video_coords*)&ca->coords;
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
       case VIDEO_SHADER_MENU:
       case VIDEO_SHADER_MENU_2:
@@ -247,7 +246,7 @@ static void gfx_display_d3d9_draw_pipeline(gfx_display_ctx_draw_t *draw,
             uniform_param.enabled              = true;
             uniform_param.lookup.enable        = true;
             uniform_param.lookup.add_prefix    = true;
-            uniform_param.lookup.idx           = draw->pipeline.id;
+            uniform_param.lookup.idx           = draw->pipeline_id;
             uniform_param.lookup.type          = SHADER_PROGRAM_VERTEX;
             uniform_param.type                 = UNIFORM_1F;
             uniform_param.lookup.ident         = "time";
@@ -256,34 +255,6 @@ static void gfx_display_d3d9_draw_pipeline(gfx_display_ctx_draw_t *draw,
          break;
    }
 #endif
-}
-
-static void gfx_display_d3d9_restore_clear_color(void)
-{
-   /* not needed */
-}
-
-static void gfx_display_d3d9_clear_color(
-      gfx_display_ctx_clearcolor_t *clearcolor,
-      void *data)
-{
-   LPDIRECT3DDEVICE9 dev;
-   DWORD    clear_color  = 0;
-   d3d9_video_t     *d3d = (d3d9_video_t*)data;
-
-   if (!d3d || !clearcolor)
-      return;
-
-   dev                  = (LPDIRECT3DDEVICE9)d3d->dev;
-
-   clear_color = D3DCOLOR_ARGB(
-         BYTE_CLAMP(clearcolor->a * 255.0f), /* A */
-         BYTE_CLAMP(clearcolor->r * 255.0f), /* R */
-         BYTE_CLAMP(clearcolor->g * 255.0f), /* G */
-         BYTE_CLAMP(clearcolor->b * 255.0f)  /* B */
-         );
-
-   d3d9_clear(dev, 0, NULL, D3D_COMM_CLEAR_TARGET, clear_color, 0, 0);
 }
 
 static bool gfx_display_d3d9_font_init_first(
@@ -339,11 +310,8 @@ void gfx_display_d3d9_scissor_end(void *data,
 gfx_display_ctx_driver_t gfx_display_ctx_d3d9 = {
    gfx_display_d3d9_draw,
    gfx_display_d3d9_draw_pipeline,
-   gfx_display_d3d9_viewport,
    gfx_display_d3d9_blend_begin,
    gfx_display_d3d9_blend_end,
-   gfx_display_d3d9_restore_clear_color,
-   gfx_display_d3d9_clear_color,
    gfx_display_d3d9_get_default_mvp,
    gfx_display_d3d9_get_default_vertices,
    gfx_display_d3d9_get_default_tex_coords,

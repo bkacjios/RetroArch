@@ -88,13 +88,6 @@ static void gfx_display_gl1_blend_end(void *data)
    glDisable(GL_BLEND);
 }
 
-static void gfx_display_gl1_viewport(gfx_display_ctx_draw_t *draw,
-      void *data)
-{
-   if (draw)
-      glViewport(draw->x, draw->y, draw->width, draw->height);
-}
-
 static void gfx_display_gl1_draw(gfx_display_ctx_draw_t *draw,
       void *data,
       unsigned video_width,
@@ -107,15 +100,15 @@ static void gfx_display_gl1_draw(gfx_display_ctx_draw_t *draw,
       return;
 
    if (!draw->coords->vertex)
-      draw->coords->vertex = gfx_display_gl1_get_default_vertices();
+      draw->coords->vertex         = &gl1_menu_vertexes[0];
    if (!draw->coords->tex_coord)
-      draw->coords->tex_coord = gfx_display_gl1_get_default_tex_coords();
+      draw->coords->tex_coord      = &gl1_menu_tex_coords[0];
    if (!draw->coords->lut_tex_coord)
-      draw->coords->lut_tex_coord = gfx_display_gl1_get_default_tex_coords();
+      draw->coords->lut_tex_coord  = &gl1_menu_tex_coords[0];
    if (!draw->texture)
       return;
 
-   gfx_display_gl1_viewport(draw, gl1);
+   glViewport(draw->x, draw->y, draw->width, draw->height);
 
    glEnable(GL_TEXTURE_2D);
 
@@ -123,7 +116,7 @@ static void gfx_display_gl1_draw(gfx_display_ctx_draw_t *draw,
 
    mvp.data   = gl1;
    mvp.matrix = draw->matrix_data ? (math_matrix_4x4*)draw->matrix_data
-      : (math_matrix_4x4*)gfx_display_gl1_get_default_mvp(gl1);
+      : (math_matrix_4x4*)&gl1->mvp_no_rot;
 
    glMatrixMode(GL_PROJECTION);
    glPushMatrix();
@@ -174,23 +167,6 @@ static void gfx_display_gl1_draw(gfx_display_ctx_draw_t *draw,
    gl1->coords.color = gl1->white_color_ptr;
 }
 
-static void gfx_display_gl1_restore_clear_color(void)
-{
-   glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-}
-
-static void gfx_display_gl1_clear_color(
-      gfx_display_ctx_clearcolor_t *clearcolor,
-      void *data)
-{
-   if (!clearcolor)
-      return;
-
-   glClearColor(clearcolor->r,
-         clearcolor->g, clearcolor->b, clearcolor->a);
-   glClear(GL_COLOR_BUFFER_BIT);
-}
-
 static bool gfx_display_gl1_font_init_first(
       void **font_handle, void *video_data,
       const char *font_path, float menu_font_size,
@@ -227,11 +203,8 @@ static void gfx_display_gl1_scissor_end(
 gfx_display_ctx_driver_t gfx_display_ctx_gl1 = {
    gfx_display_gl1_draw,
    NULL,
-   gfx_display_gl1_viewport,
    gfx_display_gl1_blend_begin,
    gfx_display_gl1_blend_end,
-   gfx_display_gl1_restore_clear_color,
-   gfx_display_gl1_clear_color,
    gfx_display_gl1_get_default_mvp,
    gfx_display_gl1_get_default_vertices,
    gfx_display_gl1_get_default_tex_coords,

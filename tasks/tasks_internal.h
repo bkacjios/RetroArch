@@ -37,13 +37,17 @@
 /* Required for task_push_core_backup() */
 #include "../core_backup.h"
 
+#if defined(HAVE_OVERLAY)
+#include "../input/input_overlay.h"
+#endif
+
 RETRO_BEGIN_DECLS
 
 typedef struct nbio_buf
 {
    void *buf;
-   unsigned bufsize;
    char *path;
+   unsigned bufsize;
 } nbio_buf_t;
 
 #ifdef HAVE_NETWORKING
@@ -51,6 +55,7 @@ typedef struct
 {
    char *data;
    size_t len;
+   int status;
 } http_transfer_data_t;
 
 void *task_push_http_transfer(const char *url, bool mute, const char *type,
@@ -70,6 +75,10 @@ task_retriever_info_t *http_task_get_transfer_list(void);
 bool task_push_bluetooth_scan(retro_task_callback_t cb);
 
 bool task_push_wifi_scan(retro_task_callback_t cb);
+bool task_push_wifi_enable(retro_task_callback_t cb);
+bool task_push_wifi_disable(retro_task_callback_t cb);
+bool task_push_wifi_disconnect(retro_task_callback_t cb);
+bool task_push_wifi_connect(retro_task_callback_t cb, void*);
 
 bool task_push_netplay_lan_scan(retro_task_callback_t cb);
 
@@ -96,6 +105,15 @@ void task_push_update_installed_cores(
       bool auto_backup, size_t auto_backup_history_size,
       const char *path_dir_libretro,
       const char *path_dir_core_assets);
+#if defined(ANDROID)
+void *task_push_play_feature_delivery_core_install(
+      core_updater_list_t* core_list,
+      const char *filename,
+      bool mute);
+void task_push_play_feature_delivery_switch_installed_cores(
+      const char *path_dir_libretro,
+      const char *path_libretro_info);
+#endif
 
 bool task_push_pl_entry_thumbnail_download(
       const char *system,
@@ -158,11 +176,10 @@ bool task_push_overlay_load_default(
       retro_task_callback_t cb,
       const char *overlay_path,
       bool overlay_hide_in_menu,
+      bool overlay_hide_when_gamepad_connected,
       bool input_overlay_enable,
       float input_overlay_opacity,
-      float input_overlay_scale,
-      float input_overlay_center_x,
-      float input_overlay_center_y,
+      overlay_layout_desc_t *layout_desc,
       void *user_data);
 #endif
 

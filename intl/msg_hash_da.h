@@ -8,9 +8,41 @@
 
 /* Top-Level Menu */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_MAIN_MENU,
+   "Hovedmenu"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_SETTINGS_TAB,
+   "Indstillinger"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_FAVORITES_TAB,
+   "Favoritter"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_HISTORY_TAB,
+   "Historik"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_IMAGES_TAB,
+   "Billeder"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_MUSIC_TAB,
+   "Musik"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_VIDEO_TAB,
+   "Videoer"
+   )
 
 /* Main Menu */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_SETTINGS,
+   "Indstillinger"
+   )
 
 /* Main Menu > Load Core */
 
@@ -20,6 +52,22 @@
 
 /* Main Menu > Load Content > Playlists */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_GOTO_FAVORITES,
+   "Favoritter"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_GOTO_MUSIC,
+   "Musik"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_GOTO_IMAGES,
+   "Billeder"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_GOTO_VIDEO,
+   "Videoer"
+   )
 
 /* Main Menu > Online Updater */
 
@@ -56,6 +104,8 @@
 
 /* Settings > Video */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > CRT SwitchRes */
 
@@ -71,6 +121,8 @@
 
 /* Settings > Video > Scaling */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > Synchronization */
 
@@ -98,17 +150,21 @@
 
 /* Settings > Input */
 
+#if defined(HAVE_DINPUT) || defined(HAVE_WINRAWINPUT)
+#endif
 
 /* Settings > Input > Haptic Feedback/Vibration */
 
+#if defined(DINGUX) && defined(HAVE_LIBSHAKE)
+#endif
 
 /* Settings > Input > Menu Controls */
 
 
-/* Settings > Input > Hotkey Binds */
+/* Settings > Input > Hotkeys */
 
 
-/* Settings > Input > Port # Binds */
+/* Settings > Input > Port # Controls */
 
 
 /* Settings > Latency */
@@ -148,8 +204,8 @@
 
 /* Settings > On-Screen Display > On-Screen Overlay */
 
-
-
+#if defined(ANDROID)
+#endif
 
 /* Settings > On-Screen Display > Video Layout */
 
@@ -160,10 +216,18 @@
 /* Settings > User Interface */
 
 
-/* Settings > User Interface > Views */
+/* Settings > User Interface > Menu Item Visibility */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_SETTINGS_VIEWS_SETTINGS,
+   "Indstillinger"
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_MENU_ADD_CONTENT_ENTRY_DISPLAY_MAIN_TAB,
+   "Hovedmenu"
+   )
 
-/* Settings > User Interface > Views > Quick Menu */
+/* Settings > User Interface > Menu Item Visibility > Quick Menu */
 
 
 /* Settings > User Interface > Views > Settings */
@@ -191,6 +255,10 @@
 
 /* Settings > Playlists */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_HISTORY_LIST_ENABLE,
+   "Historik"
+   )
 
 /* Settings > Playlists > Playlist Management */
 
@@ -213,6 +281,9 @@
 /* Settings > User > Accounts > Twitch */
 
 
+/* Settings > User > Accounts > Facebook Gaming */
+
+
 /* Settings > Directory */
 
 
@@ -227,13 +298,13 @@
 /* Netplay > Host */
 
 
-/* Import content */
+/* Import Content */
 
 
-/* Import content > Scan File */
+/* Import Content > Scan File */
 
 
-/* Import content > Manual Scan */
+/* Import Content > Manual Scan */
 
 
 /* Explore tab */
@@ -252,6 +323,11 @@
 
 /* Quick Menu > Options */
 
+
+/* Quick Menu > Options > Manage Core Options */
+
+
+/* - Legacy (unused) */
 
 /* Quick Menu > Controls */
 
@@ -282,6 +358,8 @@
 
 /* Quick Menu > Shaders > Save */
 
+   
+
 
 /* Quick Menu > Shaders > Remove */
 
@@ -294,6 +372,10 @@
 
 /* Quick Menu > Achievements */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_ACHIEVEMENT_PAUSE_MENU,
+   "ToggleCheevosHardcore" /* not-displayed - needed to resolve submenu */
+   )
 
 /* Quick Menu > Information */
 
@@ -327,9 +409,17 @@
 
 /* Qt (Desktop Menu) */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_QT_MENU_VIEW_OPTIONS_TITLE,
+   "Indstillinger"
+   )
 
 /* Unsorted */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_HISTORY,
+   "Historik"
+   )
 
 /* Unused (Only Exist in Translation Files) */
 

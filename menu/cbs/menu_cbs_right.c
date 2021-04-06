@@ -35,7 +35,7 @@
 #include "../../core.h"
 #include "../../core_info.h"
 #ifdef HAVE_CHEATS
-#include "../../managers/cheat_manager.h"
+#include "../../cheat_manager.h"
 #endif
 #include "../../file_path_special.h"
 #include "../../retroarch.h"
@@ -154,13 +154,13 @@ static int action_right_input_desc_kbd(unsigned type, const char *label,
    remap_id =
       settings->uints.input_keymapper_ids[user_idx][btn_idx];
 
-   for (key_id = 0; key_id < RARCH_MAX_KEYS - 1; key_id++)
+   for (key_id = 0; key_id < RARCH_MAX_KEYS; key_id++)
    {
       if (remap_id == key_descriptors[key_id].key)
          break;
    }
 
-   if (key_id < (RARCH_MAX_KEYS - 1) + MENU_SETTINGS_INPUT_DESC_KBD_BEGIN)
+   if (key_id < (RARCH_MAX_KEYS - 1))
       key_id++;
    else
       key_id = 0;
@@ -176,7 +176,7 @@ static int action_right_input_desc(unsigned type, const char *label,
 {
    rarch_system_info_t *system           = runloop_get_system_info();
    settings_t *settings                  = config_get_ptr();
-   unsigned btn_idx, user_idx, remap_idx;
+   unsigned btn_idx, user_idx, remap_idx, bind_idx;
 
    if (!settings || !system)
       return 0;
@@ -184,12 +184,35 @@ static int action_right_input_desc(unsigned type, const char *label,
    user_idx = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) / (RARCH_FIRST_CUSTOM_BIND + 8);
    btn_idx  = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) - (RARCH_FIRST_CUSTOM_BIND + 8) * user_idx;
 
-   if (settings->uints.input_remap_ids[user_idx][btn_idx] < RARCH_CUSTOM_BIND_LIST_END - 1)
-      settings->uints.input_remap_ids[user_idx][btn_idx]++;
-   else if (settings->uints.input_remap_ids[user_idx][btn_idx] == RARCH_CUSTOM_BIND_LIST_END - 1)
+   remap_idx = settings->uints.input_remap_ids[user_idx][btn_idx];
+   for (bind_idx = 0; bind_idx < RARCH_ANALOG_BIND_LIST_END; bind_idx++)
+   {
+      if (input_config_bind_order[bind_idx] == remap_idx)
+         break;
+   }
+
+   if (bind_idx < RARCH_CUSTOM_BIND_LIST_END - 1)
+   {
+      if (bind_idx > RARCH_ANALOG_BIND_LIST_END)
+         settings->uints.input_remap_ids[user_idx][btn_idx]++;
+      else
+      {
+         if (bind_idx < RARCH_ANALOG_BIND_LIST_END - 1)
+         {
+            bind_idx++;
+            bind_idx = input_config_bind_order[bind_idx];
+         }
+         else if (bind_idx == RARCH_ANALOG_BIND_LIST_END - 1)
+            bind_idx = RARCH_UNMAPPED;
+         else
+            bind_idx = input_config_bind_order[0];
+         settings->uints.input_remap_ids[user_idx][btn_idx] = bind_idx;
+      }
+   }
+   else if (bind_idx == RARCH_CUSTOM_BIND_LIST_END - 1)
       settings->uints.input_remap_ids[user_idx][btn_idx] = RARCH_UNMAPPED;
    else
-      settings->uints.input_remap_ids[user_idx][btn_idx] = 0;
+      settings->uints.input_remap_ids[user_idx][btn_idx] = input_config_bind_order[0];
 
    remap_idx = settings->uints.input_remap_ids[user_idx][btn_idx];
 
@@ -256,21 +279,13 @@ static int action_right_goto_tab(void)
 {
    menu_ctx_list_t list_info;
    file_list_t *selection_buf = menu_entries_get_selection_buf_ptr(0);
-   file_list_t *menu_stack    = menu_entries_get_menu_stack_ptr(0);
-   size_t selection           = menu_navigation_get_selection();
-   menu_file_list_cbs_t *cbs  = selection_buf ? (menu_file_list_cbs_t*)
-      selection_buf->list[selection].actiondata : NULL;
 
    list_info.type             = MENU_LIST_HORIZONTAL;
    list_info.action           = MENU_ACTION_RIGHT;
 
    menu_driver_list_cache(&list_info);
 
-   if (cbs && cbs->action_content_list_switch)
-      return cbs->action_content_list_switch(selection_buf, menu_stack,
-            "", "", 0);
-
-   return 0;
+   return menu_driver_deferred_push_content_list(selection_buf);
 }
 
 static int action_right_mainmenu(unsigned type, const char *label,
@@ -380,7 +395,7 @@ static int action_right_shader_num_passes(unsigned type, const char *label,
 
    menu_entries_ctl(MENU_ENTRIES_CTL_SET_REFRESH, &refresh);
    menu_driver_ctl(RARCH_MENU_CTL_SET_PREVENT_POPULATE, NULL);
-   video_shader_resolve_parameters(NULL, shader);
+   video_shader_resolve_parameters(shader);
 
    shader->modified         = true;
 
@@ -692,15 +707,9 @@ static int manual_content_scan_system_name_right(unsigned type, const char *labe
       next_index = current_index + 1;
       if (next_index >= system_name_list->size)
       {
-         if (wraparound)
-            next_index = 0;
-         else
-         {
-            if (system_name_list->size > 0)
-               next_index = system_name_list->size - 1;
-            else
-               next_index = 0;
-         }
+         next_index = 0;
+         if (!wraparound && system_name_list->size > 0)
+            next_index = (unsigned)(system_name_list->size - 1);
       }
    }
 
@@ -757,15 +766,9 @@ static int manual_content_scan_core_name_right(unsigned type, const char *label,
       next_index = current_index + 1;
       if (next_index >= core_name_list->size)
       {
-         if (wraparound)
-            next_index = 0;
-         else
-         {
-            if (core_name_list->size > 0)
-               next_index = core_name_list->size - 1;
-            else
-               next_index = 0;
-         }
+         next_index = 0;
+         if (!wraparound && core_name_list->size > 0)
+            next_index = (unsigned)(core_name_list->size - 1);
       }
    }
 
@@ -906,8 +909,10 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case FILE_TYPE_SCAN_DIRECTORY:
          case FILE_TYPE_MANUAL_SCAN_DIRECTORY:
          case FILE_TYPE_FONT:
+         case FILE_TYPE_VIDEO_FONT:
          case MENU_SETTING_GROUP:
          case MENU_SETTINGS_CORE_INFO_NONE:
+         case MENU_SETTING_ACTION_FAVORITES_DIR:
             if (
                      string_ends_with_size(menu_label, "_tab",
                         strlen(menu_label), STRLEN_CONST("_tab"))
@@ -995,6 +1000,7 @@ static int menu_cbs_init_bind_right_compare_label(menu_file_list_cbs_t *cbs,
             case MENU_ENUM_LABEL_SUBSYSTEM_LOAD:
             case MENU_ENUM_LABEL_CONNECT_NETPLAY_ROOM:
             case MENU_ENUM_LABEL_EXPLORE_ITEM:
+            case MENU_ENUM_LABEL_NO_SETTINGS_FOUND:
                BIND_ACTION_RIGHT(cbs, action_right_mainmenu);
                break;
             case MENU_ENUM_LABEL_VIDEO_SHADER_SCALE_PASS:

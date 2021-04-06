@@ -39,11 +39,6 @@
  * with a manual content scan */
 typedef struct
 {
-   bool search_recursively;
-   bool search_archives;
-   bool filter_dat_content;
-   bool overwrite_playlist;
-
    enum manual_content_scan_system_name_type system_name_type;
    enum manual_content_scan_core_type core_type;
 
@@ -56,6 +51,11 @@ typedef struct
    char file_exts_core[PATH_MAX_LENGTH];
    char file_exts_custom[PATH_MAX_LENGTH];
    char dat_file_path[PATH_MAX_LENGTH];
+
+   bool search_recursively;
+   bool search_archives;
+   bool filter_dat_content;
+   bool overwrite_playlist;
 } scan_settings_t;
 
 /* TODO/FIXME - static public global variables */
@@ -69,10 +69,6 @@ typedef struct
  *   are not thread safe, but we only access them when pushing a
  *   task, not in the task thread itself, so all is well) */
 static scan_settings_t scan_settings = {
-   true,                                        /* search_recursively */
-   false,                                       /* search_archives */
-   false,                                       /* filter_dat_content */
-   false,                                       /* overwrite_playlist */
    MANUAL_CONTENT_SCAN_SYSTEM_NAME_CONTENT_DIR, /* system_name_type */
    MANUAL_CONTENT_SCAN_CORE_DETECT,             /* core_type */
    "",                                          /* content_dir */
@@ -84,6 +80,10 @@ static scan_settings_t scan_settings = {
    "",                                          /* file_exts_core */
    "",                                          /* file_exts_custom */
    "",                                          /* dat_file_path */
+   true,                                        /* search_recursively */
+   false,                                       /* search_archives */
+   false,                                       /* filter_dat_content */
+   false                                        /* overwrite_playlist */
 };
 
 /*****************/
@@ -91,6 +91,20 @@ static scan_settings_t scan_settings = {
 /*****************/
 
 /* Pointer access */
+
+/* Returns a pointer to the internal
+ * 'content_dir' string */
+char *manual_content_scan_get_content_dir_ptr(void)
+{
+   return scan_settings.content_dir;
+}
+
+/* Returns size of the internal
+ * 'content_dir' string */
+size_t manual_content_scan_get_content_dir_size(void)
+{
+   return sizeof(scan_settings.content_dir);
+}
 
 /* Returns a pointer to the internal
  * 'system_name_custom' string */
@@ -797,7 +811,7 @@ bool manual_content_scan_get_task_config(
 
    strlcat(
          task_config->database_name,
-         file_path_str(FILE_PATH_LPL_EXTENSION),
+         FILE_PATH_LPL_EXTENSION,
          sizeof(task_config->database_name));
 
    /* ...which can in turn be used to generate the

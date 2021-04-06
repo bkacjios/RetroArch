@@ -24,6 +24,7 @@
 #include <compat/strcasestr.h>
 #include <compat/strl.h>
 #include <array/rbuf.h>
+#include <array/rhmap.h>
 
 #define EX_ARENA_ALIGNMENT 8
 #define EX_ARENA_BLOCK_SIZE (64 * 1024)
@@ -64,14 +65,6 @@ typedef struct ex_arena
    char **blocks;
 } ex_arena;
 
-typedef struct ex_hashmap32
-{
-   uint32_t len;
-   uint32_t cap;
-   uint32_t *keys;
-   uintptr_t *vals;
-} ex_hashmap32;
-
 typedef struct
 {
    uint32_t idx;
@@ -90,38 +83,38 @@ typedef struct
 
 typedef struct 
 {
-   ex_arena arena;
+   ex_arena arena; /* ptr alignment */
    explore_string_t **by[EXPLORE_CAT_COUNT];
-   bool has_unknown[EXPLORE_CAT_COUNT];
-
-   explore_entry_t* entries;
+   explore_entry_t *entries;
    playlist_t **playlists;
-   uintptr_t* icons;
-   const char* label_explore_item_str;
-   char title[1024];
-   char find_string[1024];
+   uintptr_t *icons;
+   const char *label_explore_item_str;
    unsigned top_depth;
    unsigned show_icons;
+
+   char title[1024];
+   char find_string[1024];
+   bool has_unknown[EXPLORE_CAT_COUNT];
 } explore_state_t;
 
 static const struct
 {
-   enum msg_hash_enums name_enum, by_enum;
    const char* rdbkey;
+   enum msg_hash_enums name_enum, by_enum;
    bool use_split, is_company, is_numeric;
 }
 explore_by_info[EXPLORE_CAT_COUNT] = 
 {
-   { MENU_ENUM_LABEL_VALUE_RDB_ENTRY_DEVELOPER,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_DEVELOPER,    "developer",   true,  true,  false },
-   { MENU_ENUM_LABEL_VALUE_RDB_ENTRY_PUBLISHER,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_PUBLISHER,    "publisher",   true,  true,  false },
-   { MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_RELEASE_YEAR, MENU_ENUM_LABEL_VALUE_EXPLORE_BY_RELEASE_YEAR, "releaseyear", false, false, true  },
-   { MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_PLAYER_COUNT, MENU_ENUM_LABEL_VALUE_EXPLORE_BY_PLAYER_COUNT, "users",       false, false, true  },
-   { MENU_ENUM_LABEL_VALUE_RDB_ENTRY_GENRE,               MENU_ENUM_LABEL_VALUE_EXPLORE_BY_GENRE,        "genre",       true,  false, false },
-   { MENU_ENUM_LABEL_VALUE_RDB_ENTRY_ORIGIN,              MENU_ENUM_LABEL_VALUE_EXPLORE_BY_ORIGIN,       "origin",      false, false, false },
-   { MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_REGION,       MENU_ENUM_LABEL_VALUE_EXPLORE_BY_REGION,       "region",      false, false, false },
-   { MENU_ENUM_LABEL_VALUE_RDB_ENTRY_FRANCHISE,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_FRANCHISE,    "franchise",   false, false, false },
-   { MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_TAG,          MENU_ENUM_LABEL_VALUE_EXPLORE_BY_TAG,          "tags",        true,  false, false },
-   { MENU_ENUM_LABEL_VALUE_CORE_INFO_SYSTEM_NAME,         MENU_ENUM_LABEL_VALUE_EXPLORE_BY_SYSTEM_NAME,  "system",      false, false, false },
+   { "developer",   MENU_ENUM_LABEL_VALUE_RDB_ENTRY_DEVELOPER,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_DEVELOPER,    true,  true,  false },
+   { "publisher",   MENU_ENUM_LABEL_VALUE_RDB_ENTRY_PUBLISHER,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_PUBLISHER,    true,  true,  false },
+   { "releaseyear", MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_RELEASE_YEAR, MENU_ENUM_LABEL_VALUE_EXPLORE_BY_RELEASE_YEAR, false, false, true  },
+   { "users",       MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_PLAYER_COUNT, MENU_ENUM_LABEL_VALUE_EXPLORE_BY_PLAYER_COUNT, false, false, true  },
+   { "genre",       MENU_ENUM_LABEL_VALUE_RDB_ENTRY_GENRE,               MENU_ENUM_LABEL_VALUE_EXPLORE_BY_GENRE,        true,  false, false },
+   { "origin",      MENU_ENUM_LABEL_VALUE_RDB_ENTRY_ORIGIN,              MENU_ENUM_LABEL_VALUE_EXPLORE_BY_ORIGIN,       false, false, false },
+   { "region",      MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_REGION,       MENU_ENUM_LABEL_VALUE_EXPLORE_BY_REGION,       false, false, false },
+   { "franchise",   MENU_ENUM_LABEL_VALUE_RDB_ENTRY_FRANCHISE,           MENU_ENUM_LABEL_VALUE_EXPLORE_BY_FRANCHISE,    false, false, false },
+   { "tags",        MENU_ENUM_LABEL_VALUE_EXPLORE_CATEGORY_TAG,          MENU_ENUM_LABEL_VALUE_EXPLORE_BY_TAG,          true,  false, false },
+   { "system",      MENU_ENUM_LABEL_VALUE_CORE_INFO_SYSTEM_NAME,         MENU_ENUM_LABEL_VALUE_EXPLORE_BY_SYSTEM_NAME,  false, false, false },
 };
 
 /* TODO/FIXME - static global */
@@ -163,17 +156,6 @@ static void ex_arena_free(ex_arena *arena)
 }
 
 /* Hash function */
-static uint32_t ex_hash32(const char* str)
-{
-   unsigned char c;
-   uint32_t hash = (uint32_t)0x811c9dc5;
-   for (; (c = *(str++)) != '\0';)
-      hash = ((hash * (uint32_t)0x01000193) ^ (uint32_t)c);
-   if (hash)
-      return hash;
-   return 1;
-}
-
 static uint32_t ex_hash32_nocase_filtered(
       const unsigned char* str, size_t len,
       unsigned char f_first, unsigned char f_last)
@@ -191,127 +173,6 @@ static uint32_t ex_hash32_nocase_filtered(
    if (hash)
       return hash;
    return 1;
-}
-
-/* Hashmap */
-static void ex_hashmap32__grow(ex_hashmap32* map, uint32_t new_cap)
-{
-   size_t i, j;
-   uint32_t old_cap    = map->cap;
-   uint32_t *old_keys  = map->keys;
-   uintptr_t *old_vals = map->vals;
-
-   map->cap            = (new_cap < 16) ? 16 : new_cap;
-   map->keys           = (uint32_t *)calloc(map->cap, sizeof(uint32_t));
-   map->vals           = (uintptr_t *)malloc(map->cap * sizeof(uintptr_t));
-
-   for (i = 0; i < old_cap; i++)
-   {
-      uint32_t key;
-      if (!old_keys[i])
-         continue;
-
-      for (key = old_keys[i], j = key;; j++)
-      {
-         if (!map->keys[j &= map->cap - 1])
-         {
-            map->keys[j] = key;
-            map->vals[j] = old_vals[i];
-            break;
-         }
-      }
-   }
-
-   free(old_keys);
-   free(old_vals);
-}
-
-static INLINE void ex_hashmap32_init(ex_hashmap32* map)
-{
-   map->len = map->cap = 0;
-   map->keys = NULL;
-   map->vals = NULL;
-}
-
-static void ex_hashmap32_free(ex_hashmap32* map)
-{
-   if (!map)
-      return;
-   free(map->keys);
-   free(map->vals);
-}
-
-static uintptr_t ex_hashmap32_getnum(ex_hashmap32* map, uint32_t key)
-{
-   uint32_t i;
-   if (!map || map->len == 0 || !key)
-      return 0;
-   for (i = key;; i++)
-   {
-      if (map->keys[i &= map->cap - 1] == key)
-         return map->vals[i];
-      if (!map->keys[i])
-         break;
-   }
-   return 0;
-}
-
-static void ex_hashmap32_setnum(
-      ex_hashmap32* map, uint32_t key, uintptr_t val)
-{
-   uint32_t i;
-   if (!key)
-      return;
-   if (2 * map->len >= map->cap)
-      ex_hashmap32__grow(map, 2 * map->cap);
-
-   for (i = key;; i++)
-   {
-      if (!map->keys[i &= map->cap - 1])
-      {
-         map->len++;
-         map->keys[i] = key;
-         map->vals[i] = val;
-         return;
-      }
-      if (map->keys[i] == key)
-      {
-         map->vals[i] = val;
-         return;
-      }
-   }
-}
-
-static INLINE void *ex_hashmap32_getptr(ex_hashmap32* map, uint32_t key)
-{
-   return (void*)ex_hashmap32_getnum(map, key);
-}
-
-static INLINE void ex_hashmap32_setptr(ex_hashmap32* map,
-      uint32_t key, void* ptr)
-{
-   ex_hashmap32_setnum(map, key, (uintptr_t)ptr);
-}
-
-static INLINE void *ex_hashmap32_strgetptr(ex_hashmap32* map, const char* str)
-{
-   return (void*)ex_hashmap32_getnum(map, ex_hash32(str));
-}
-
-static INLINE void ex_hashmap32_strsetptr(ex_hashmap32* map,
-      const char* str, void* ptr)
-{
-   ex_hashmap32_setnum(map, ex_hash32(str), (uintptr_t)ptr);
-}
-static INLINE uintptr_t ex_hashmap32_strgetnum(
-      ex_hashmap32* map, const char* str)
-{
-   return ex_hashmap32_getnum(map, ex_hash32(str));
-}
-static INLINE void ex_hashmap32_strsetnum(ex_hashmap32* map,
-      const char* str, uintptr_t num)
-{
-   ex_hashmap32_setnum(map, ex_hash32(str), num);
 }
 
 static int explore_qsort_func_strings(const void *a_, const void *b_)
@@ -343,24 +204,32 @@ static int explore_qsort_func_menulist(const void *a_, const void *b_)
 
 static int explore_check_company_suffix(const char* p, bool search_reverse)
 {
+   int p0, p0_lc, p1, p1_lc, p2, p2_lc;
    if (search_reverse)
    {
       p -= (p[-1] == '.' ? 4 : 3);
       if (p[-1] != ' ')
          return 0;
    }
-   if (tolower(p[0]) == 'i' && tolower(p[1]) == 'n' && tolower(p[2]) == 'c')
-      return (p[3] == '.' ? 4 : 3); /*, Inc */
-   if (tolower(p[0]) == 'l' && tolower(p[1] )== 't' && tolower(p[2]) == 'd')
-      return (p[3] == '.' ? 4 : 3); /*, Ltd */
-   if (tolower(p[0]) == 't' && tolower(p[1] )== 'h' && tolower(p[2]) == 'e')
-      return (p[3] == '.' ? 4 : 3); /*, The */
+   if (p[0] == '\0' || p[1] == '\0' || p[2] == '\0')
+      return 0;
+   p0     = p[0];
+   p1     = p[1];
+   p2     = p[2];
+   p0_lc  = TOLOWER(p0);
+   p1_lc  = TOLOWER(p1);
+   p2_lc  = TOLOWER(p2);
+   if (   (p0_lc == 'i' && p1_lc == 'n' && p2_lc == 'c') /*, Inc */
+       || (p0_lc == 'l' && p1_lc == 't' && p2_lc == 'd') /*, Ltd */
+       || (p0_lc == 't' && p1_lc == 'h' && p2_lc == 'e') /*, The */
+         )
+      return (p[3] == '.' ? 4 : 3);
    return 0;
 }
 
 static void explore_add_unique_string(
       explore_state_t *explore,
-      ex_hashmap32 *maps, explore_entry_t *e,
+      explore_string_t** maps[EXPLORE_CAT_COUNT], explore_entry_t *e,
       unsigned cat, const char *str,
       explore_string_t ***split_buf)
 {
@@ -412,8 +281,7 @@ static void explore_add_unique_string(
       len                     = p - str;
       hash                    = ex_hash32_nocase_filtered(
             (unsigned char*)str, len, '0', 255);
-      entry                   = 
-         (explore_string_t*)ex_hashmap32_getptr(&maps[cat], hash);
+      entry                   = RHMAP_GET(maps[cat], hash);
 
       if (!entry)
       {
@@ -423,7 +291,7 @@ static void explore_add_unique_string(
          memcpy(entry->str, str, len);
          entry->str[len]      = '\0';
          RBUF_PUSH(explore->by[cat], entry);
-         ex_hashmap32_setptr(&maps[cat], hash, entry);
+         RHMAP_SET(maps[cat], hash, entry);
       }
 
       if (!e->by[cat])
@@ -538,21 +406,21 @@ static explore_state_t *explore_build_list(void)
    struct explore_rdb
    {
       libretrodb_t *handle;
+      const struct playlist_entry **playlist_crcs;
+      const struct playlist_entry **playlist_names;
       size_t count;
-      ex_hashmap32 playlist_crcs;
-      ex_hashmap32 playlist_names;
       char systemname[256];
    }
-   *rdbs                                    = NULL;
-   ex_hashmap32 rdb_indices                 = {0};
-   ex_hashmap32 cat_maps[EXPLORE_CAT_COUNT] = {{0}};
-   explore_string_t **split_buf             = NULL;
-   settings_t *settings                     = config_get_ptr();
-   const char *directory_playlist           = settings->paths.directory_playlist;
-   const char *directory_database           = settings->paths.path_content_database;
-   libretro_vfs_implementation_dir *dir     = NULL;
+   *rdbs                                          = NULL;
+   int *rdb_indices                               = NULL;
+   explore_string_t **cat_maps[EXPLORE_CAT_COUNT] = {NULL};
+   explore_string_t **split_buf                   = NULL;
+   settings_t *settings                           = config_get_ptr();
+   const char *directory_playlist                 = settings->paths.directory_playlist;
+   const char *directory_database                 = settings->paths.path_content_database;
+   libretro_vfs_implementation_dir *dir           = NULL;
 
-   explore_state_t *explore                 = (explore_state_t*)calloc(
+   explore_state_t *explore                       = (explore_state_t*)calloc(
          1, sizeof(*explore));
 
    if (!explore)
@@ -602,7 +470,7 @@ static explore_state_t *explore_build_list(void)
 
       for (j = 0; j < playlist_size(playlist); j++)
       {
-         uintptr_t rdb_num;
+         int rdb_num;
          uint32_t entry_crc32;
          struct explore_rdb* rdb             = NULL;
          const struct playlist_entry *entry  = NULL;
@@ -628,16 +496,16 @@ static explore_state_t *explore_build_list(void)
                (unsigned char*)db_name, db_ext - db_name, '0', 255);
          }
 
-         rdb_num = ex_hashmap32_getnum(&rdb_indices, rdb_hash);
+         rdb_num = RHMAP_GET(rdb_indices, rdb_hash);
          if (!rdb_num)
          {
             struct explore_rdb newrdb;
             size_t systemname_len;
 
-            newrdb.handle = libretrodb_new();
-            newrdb.count  = 0;
-            ex_hashmap32_init(&newrdb.playlist_crcs);
-            ex_hashmap32_init(&newrdb.playlist_names);
+            newrdb.handle         = libretrodb_new();
+            newrdb.count          = 0;
+            newrdb.playlist_crcs  = NULL;
+            newrdb.playlist_names = NULL;
 
             systemname_len = db_ext - db_name;
             if (systemname_len >= sizeof(newrdb.systemname))
@@ -653,13 +521,13 @@ static explore_state_t *explore_build_list(void)
             {
                /* Invalid RDB file */
                libretrodb_free(newrdb.handle);
-               ex_hashmap32_setnum(&rdb_indices, rdb_hash, (uintptr_t)-1);
+               RHMAP_SET(rdb_indices, rdb_hash, -1);
                continue;
             }
 
             RBUF_PUSH(rdbs, newrdb);
             rdb_num = (uintptr_t)RBUF_LEN(rdbs);
-            ex_hashmap32_setnum(&rdb_indices, rdb_hash, rdb_num);
+            RHMAP_SET(rdb_indices, rdb_hash, rdb_num);
          }
 
          if (rdb_num == (uintptr_t)-1)
@@ -671,13 +539,11 @@ static explore_state_t *explore_build_list(void)
                (entry->crc32 ? entry->crc32 : ""), NULL, 16);
          if (entry_crc32)
          {
-            ex_hashmap32_setptr(&rdb->playlist_crcs,
-                  entry_crc32, (void*)entry);
+            RHMAP_SET(rdb->playlist_crcs, entry_crc32, entry);
          }
          else
          {
-            ex_hashmap32_strsetptr(&rdb->playlist_names,
-                  entry->label, (void*)entry);
+            RHMAP_SET_STR(rdb->playlist_names, entry->label, entry);
          }
          used_entries++;
       }
@@ -731,7 +597,22 @@ static explore_state_t *explore_build_list(void)
             key_str                         = key->val.string.buff;
             if (string_is_equal(key_str, "crc"))
             {
-               crc32 = swap_if_little32(*(uint32_t*)val->val.binary.buff);
+               switch (strlen(val->val.binary.buff))
+               {
+                  case 1:
+                     crc32 = *(uint8_t*)val->val.binary.buff;
+                     break;
+                  case 2:
+                     crc32 = swap_if_little16(*(uint16_t*)val->val.binary.buff);
+                     break;
+                  case 4:
+                     crc32 = swap_if_little32(*(uint32_t*)val->val.binary.buff);
+                     break;
+                  default:
+                     crc32 = 0;
+                     break;
+               }
+
                continue;
             }
             else if (string_is_equal(key_str, "name"))
@@ -771,13 +652,11 @@ static explore_state_t *explore_build_list(void)
 
          if (crc32)
          {
-            entry = (const struct playlist_entry *)ex_hashmap32_getptr(
-                  &rdb->playlist_crcs, crc32);
+            entry = RHMAP_GET(rdb->playlist_crcs, crc32);
          }
          if (!entry && name)
          {
-            entry = (const struct playlist_entry *)ex_hashmap32_strgetptr(
-                  &rdb->playlist_names, name);
+            entry = RHMAP_GET_STR(rdb->playlist_names, name);
          }
          if (!entry)
             continue;
@@ -835,11 +714,11 @@ static explore_state_t *explore_build_list(void)
       libretrodb_cursor_free(cur);
       libretrodb_close(rdb->handle);
       libretrodb_free(rdb->handle);
-      ex_hashmap32_free(&rdb->playlist_crcs);
-      ex_hashmap32_free(&rdb->playlist_names);
+      RHMAP_FREE(rdb->playlist_crcs);
+      RHMAP_FREE(rdb->playlist_names);
    }
    RBUF_FREE(split_buf);
-   ex_hashmap32_free(&rdb_indices);
+   RHMAP_FREE(rdb_indices);
    RBUF_FREE(rdbs);
 
    for (i = 0; i != EXPLORE_CAT_COUNT; i++)
@@ -854,7 +733,7 @@ static explore_state_t *explore_build_list(void)
       for (idx = 0; idx != len; idx++)
          explore->by[i][idx]->idx = idx;
 
-      ex_hashmap32_free(&cat_maps[i]);
+      RHMAP_FREE(cat_maps[i]);
    }
    qsort(explore->entries,
          RBUF_LEN(explore->entries),
@@ -1128,7 +1007,7 @@ SKIP_EXPLORE_BY_CATEGORY:;
       explore_string_t* filter[10];
       explore_entry_t *e                  = NULL;
       explore_entry_t *e_end              = NULL;
-      ex_hashmap32 map_filtered_category  = {0};
+      bool* map_filtered_category         = NULL;
       unsigned levels                     = 0;
       bool use_find                       = (
             *explore_state->find_string != '\0');
@@ -1227,9 +1106,9 @@ SKIP_EXPLORE_BY_CATEGORY:;
                filtered_category_have_unknown = true;
                continue;
             }
-            if (ex_hashmap32_getnum(&map_filtered_category, str->idx + 1))
+            if (RHMAP_HAS(map_filtered_category, str->idx + 1))
                continue;
-            ex_hashmap32_setnum(&map_filtered_category, str->idx + 1, 1);
+            RHMAP_SET(map_filtered_category, str->idx + 1, true);
             explore_menu_entry(list, explore_state,
                   str->str,
                   EXPLORE_TYPE_FIRSTITEM + str->idx);
@@ -1262,7 +1141,7 @@ SKIP_ENTRY:;
       explore_append_title(explore_state,
             " (%u)", (unsigned) (list->size - (is_filtered_category ? 0 : 1)));
 
-      ex_hashmap32_free(&map_filtered_category);
+      RHMAP_FREE(map_filtered_category);
    }
    else
    {
@@ -1297,7 +1176,8 @@ SKIP_ENTRY:;
          strlcpy(menu->deferred_path,
                pl_entry->path, sizeof(menu->deferred_path));
          info.list                     = list;
-         menu_displaylist_ctl(DISPLAYLIST_HORIZONTAL_CONTENT_ACTIONS, &info);
+         menu_displaylist_ctl(DISPLAYLIST_HORIZONTAL_CONTENT_ACTIONS, &info,
+               config_get_ptr());
          break;
       }
    }

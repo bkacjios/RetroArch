@@ -74,7 +74,9 @@ typedef ID3D11VideoProcessorOutputView* D3D11VideoProcessorOutputView;
 typedef ID3D11VideoContext*             D3D11VideoContext;
 typedef ID3D11VideoDevice*              D3D11VideoDevice;
 typedef ID3D11Device*                   D3D11Device;
+#ifdef DEBUG
 typedef ID3D11Debug*                    D3D11Debug;
+#endif
 typedef ID3D11SwitchToRef*              D3D11SwitchToRef;
 typedef ID3D11TracingDevice*            D3D11TracingDevice;
 typedef ID3D11InfoQueue*                D3D11InfoQueue;
@@ -123,6 +125,10 @@ static INLINE UINT D3D11GetTexture3DEvictionPriority(D3D11Texture3D texture3d)
 {
    return texture3d->lpVtbl->GetEvictionPriority(texture3d);
 }
+static INLINE void D3D11GetTexture2DDesc(D3D11Texture2D texture2d, D3D11_TEXTURE2D_DESC* desc)
+{
+    texture2d->lpVtbl->GetDesc(texture2d, desc);
+}
 static INLINE void D3D11GetViewResource(D3D11View view, D3D11Resource* resource)
 {
    view->lpVtbl->GetResource(view, resource);
@@ -131,6 +137,16 @@ static INLINE void D3D11GetShaderResourceViewResource(
       D3D11ShaderResourceView shader_resource_view, D3D11Resource* resource)
 {
    shader_resource_view->lpVtbl->GetResource(shader_resource_view, resource);
+}
+static INLINE void D3D11GetShaderResourceViewTexture2D(
+    D3D11ShaderResourceView shader_resource_view, D3D11Texture2D* texture2d)
+{
+    shader_resource_view->lpVtbl->GetResource(shader_resource_view, (D3D11Resource*)texture2d);
+}
+static INLINE void D3D11GetShaderResourceViewDesc(
+    D3D11ShaderResourceView shader_resource_view, D3D11_SHADER_RESOURCE_VIEW_DESC* desc)
+{
+    shader_resource_view->lpVtbl->GetDesc(shader_resource_view, desc);
 }
 static INLINE void
 D3D11GetRenderTargetViewResource(D3D11RenderTargetView render_target_view, D3D11Resource* resource)
@@ -497,7 +513,7 @@ static INLINE void D3D11DispatchIndirect(
          device_context, buffer_for_args, aligned_byte_offset_for_args);
 }
 static INLINE void
-D3D11SetState(D3D11DeviceContext device_context, D3D11RasterizerState rasterizer_state)
+D3D11SetRasterizerState(D3D11DeviceContext device_context, D3D11RasterizerState rasterizer_state)
 {
    device_context->lpVtbl->RSSetState(device_context, rasterizer_state);
 }
@@ -2127,6 +2143,8 @@ static INLINE UINT D3D11GetExceptionMode(D3D11Device device)
 {
    return device->lpVtbl->GetExceptionMode(device);
 }
+
+#ifdef DEBUG
 static INLINE HRESULT D3D11SetDebugFeatureMask(D3D11Debug debug, UINT mask)
 {
    return debug->lpVtbl->SetFeatureMask(debug, mask);
@@ -2163,6 +2181,8 @@ static INLINE HRESULT D3D11ValidateContextForDispatch(D3D11Debug debug, D3D11Dev
 {
    return debug->lpVtbl->ValidateContextForDispatch(debug, context);
 }
+#endif
+
 #ifndef __WINRT__
 static INLINE BOOL D3D11SetUseRef(D3D11SwitchToRef switch_to_ref, BOOL use_ref)
 {
@@ -2340,6 +2360,7 @@ static INLINE BOOL D3D11GetBreakOnID(D3D11InfoQueue info_queue, D3D11_MESSAGE_ID
 {
    return info_queue->lpVtbl->GetBreakOnID(info_queue, id);
 }
+#ifdef DEBUG
 static INLINE void D3D11SetMuteDebugOutput(D3D11InfoQueue info_queue, BOOL mute)
 {
    info_queue->lpVtbl->SetMuteDebugOutput(info_queue, mute);
@@ -2348,6 +2369,7 @@ static INLINE BOOL D3D11GetMuteDebugOutput(D3D11InfoQueue info_queue)
 {
    return info_queue->lpVtbl->GetMuteDebugOutput(info_queue);
 }
+#endif
 
 /* end of auto-generated */
 
@@ -2453,6 +2475,7 @@ typedef struct
 
 typedef struct
 {
+   UINT32 colors[4];
    struct
    {
       float x, y, w, h;
@@ -2461,7 +2484,6 @@ typedef struct
    {
       float u, v, w, h;
    } coords;
-   UINT32 colors[4];
    struct
    {
       float scaling;
@@ -2503,8 +2525,8 @@ typedef struct
    D3D11Device           device;
    D3D_FEATURE_LEVEL     supportedFeatureLevel;
    D3D11DeviceContext    context;
-   D3D11RasterizerState  state;
-   D3D11RenderTargetView renderTargetView;
+   D3D11RasterizerState  scissor_enabled;
+   D3D11RasterizerState  scissor_disabled;
    D3D11Buffer           ubo;
    d3d11_uniform_t       ubo_values;
    D3D11SamplerState     samplers[RARCH_FILTER_MAX][RARCH_WRAP_MAX];
@@ -2515,6 +2537,7 @@ typedef struct
    math_matrix_4x4       mvp, mvp_no_rot;
    struct video_viewport vp;
    D3D11_VIEWPORT        viewport;
+   D3D11_RECT            scissor;
    DXGI_FORMAT           format;
    float                 clearcolor[4];
    bool                  vsync;
@@ -2523,6 +2546,7 @@ typedef struct
    bool                  resize_viewport;
    bool                  resize_render_targets;
    bool                  init_history;
+   bool                  has_flip_model;
    d3d11_shader_t        shaders[GFX_MAX_SHADERS];
 #ifdef __WINRT__
    DXGIFactory2 factory;

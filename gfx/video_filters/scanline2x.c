@@ -108,41 +108,38 @@ static void scanline2x_generic_destroy(void *data)
 static void scanline2x_work_cb_xrgb8888(void *data, void *thread_data)
 {
    struct softfilter_thread_data *thr = (struct softfilter_thread_data*)thread_data;
-   const uint32_t *input = (const uint32_t*)thr->in_data;
-   uint32_t *output = (uint32_t*)thr->out_data;
-   unsigned in_stride = (unsigned)(thr->in_pitch >> 2);
-   unsigned out_stride = (unsigned)(thr->out_pitch >> 2);
-   unsigned x, y;
+   const uint32_t *input              = (const uint32_t*)thr->in_data;
+   uint32_t *output                   = (uint32_t*)thr->out_data;
+   uint32_t in_stride                 = (uint32_t)(thr->in_pitch >> 2);
+   uint32_t out_stride                = (uint32_t)(thr->out_pitch >> 2);
+   uint32_t x, y;
 
    for (y = 0; y < thr->height; ++y)
    {
       uint32_t *out_ptr = output;
       for (x = 0; x < thr->width; ++x)
       {
-         /* Note: We process the 'padding' bits as though they
-          * matter (they don't), since this deals with any potential
-          * byte swapping issues */ 
+         uint32_t *out_line_ptr  = out_ptr;
          uint32_t color          = *(input + x);
-         uint8_t  p              = (color >> 24 & 0xFF); /* Padding bits */
-         uint8_t  r              = (color >> 16 & 0xFF);
-         uint8_t  g              = (color >>  8 & 0xFF);
-         uint8_t  b              = (color       & 0xFF);
-         uint32_t scanline_color =
-               (((p >> 1) + (p >> 2)) << 24) |
-               (((r >> 1) + (r >> 2)) << 16) |
-               (((g >> 1) + (g >> 2)) <<  8) |
-               (((b >> 1) + (b >> 2))      );
-         uint32_t color_buf[2];
-         uint32_t scanline_color_buf[2];
 
-         color_buf[0] = color;
-         color_buf[1] = color;
+         /* Scanline colour is color * 0.75
+          * > First pass: 50:50 mix of color:0 */
+         uint32_t scanline_color = (color + (color & 0x1010101)) >> 1;
+         /* > Second pass: 50:50 mix of color:(color:0)
+          *   => Gives ((1 + 0.5) / 2) = 0.75 */
+         scanline_color = (color + scanline_color + ((color ^ scanline_color) & 0x1010101)) >> 1;
 
-         scanline_color_buf[0] = scanline_color;
-         scanline_color_buf[1] = scanline_color;
+         /* c.f "Mixing Packed RGB Pixels Efficiently"
+          * http://blargg.8bitalley.com/info/rgb_mixing.html */
 
-         memcpy(out_ptr,              color_buf,          sizeof(color_buf));
-         memcpy(out_ptr + out_stride, scanline_color_buf, sizeof(scanline_color_buf));
+         /* Row 1: Colour */
+         *out_line_ptr       = color;
+         *(out_line_ptr + 1) = color;
+         out_line_ptr       += out_stride;
+
+         /* Row 2: Scanline */
+         *out_line_ptr       = scanline_color;
+         *(out_line_ptr + 1) = scanline_color;
 
          out_ptr += 2;
       }
@@ -155,36 +152,38 @@ static void scanline2x_work_cb_xrgb8888(void *data, void *thread_data)
 static void scanline2x_work_cb_rgb565(void *data, void *thread_data)
 {
    struct softfilter_thread_data *thr = (struct softfilter_thread_data*)thread_data;
-   const uint16_t *input = (const uint16_t*)thr->in_data;
-   uint16_t *output = (uint16_t*)thr->out_data;
-   unsigned in_stride = (unsigned)(thr->in_pitch >> 1);
-   unsigned out_stride = (unsigned)(thr->out_pitch >> 1);
-   unsigned x, y;
+   const uint16_t *input              = (const uint16_t*)thr->in_data;
+   uint16_t *output                   = (uint16_t*)thr->out_data;
+   uint16_t in_stride                 = (uint16_t)(thr->in_pitch >> 1);
+   uint16_t out_stride                = (uint16_t)(thr->out_pitch >> 1);
+   uint16_t x, y;
 
    for (y = 0; y < thr->height; ++y)
    {
       uint16_t *out_ptr = output;
       for (x = 0; x < thr->width; ++x)
       {
+         uint16_t *out_line_ptr  = out_ptr;
          uint16_t color          = *(input + x);
-         uint8_t  r              = (color >> 11 & 0x1F);
-         uint8_t  g              = (color >>  6 & 0x1F);
-         uint8_t  b              = (color       & 0x1F);
-         uint16_t scanline_color =
-               (((r >> 1) + (r >> 2)) << 11) |
-               (((g >> 1) + (g >> 2)) <<  6) |
-               (((b >> 1) + (b >> 2))      );
-         uint16_t color_buf[2];
-         uint16_t scanline_color_buf[2];
 
-         color_buf[0] = color;
-         color_buf[1] = color;
+         /* Scanline colour is color * 0.75
+          * > First pass: 50:50 mix of color:0 */
+         uint16_t scanline_color = (color + (color & 0x821)) >> 1;
+         /* > Second pass: 50:50 mix of color:(color:0)
+          *   => Gives ((1 + 0.5) / 2) = 0.75 */
+         scanline_color = (color + scanline_color + ((color ^ scanline_color) & 0x821)) >> 1;
 
-         scanline_color_buf[0] = scanline_color;
-         scanline_color_buf[1] = scanline_color;
+         /* c.f "Mixing Packed RGB Pixels Efficiently"
+          * http://blargg.8bitalley.com/info/rgb_mixing.html */
 
-         memcpy(out_ptr,              color_buf,          sizeof(color_buf));
-         memcpy(out_ptr + out_stride, scanline_color_buf, sizeof(scanline_color_buf));
+         /* Row 1: Colour */
+         *out_line_ptr       = color;
+         *(out_line_ptr + 1) = color;
+         out_line_ptr       += out_stride;
+
+         /* Row 2: Scanline */
+         *out_line_ptr       = scanline_color;
+         *(out_line_ptr + 1) = scanline_color;
 
          out_ptr += 2;
       }

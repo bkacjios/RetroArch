@@ -44,6 +44,7 @@
 #include <sys/sysctl.h>
 #elif defined(IOS)
 #include <UIKit/UIDevice.h>
+#include <sys/sysctl.h>
 #endif
 
 #include <boolean.h>
@@ -67,6 +68,7 @@
 #include "../../verbosity.h"
 #include "../../msg_hash.h"
 #include "../../ui/ui_companion_driver.h"
+#include "../../paths.h"
 
 #if 1
 #define RELEASE_BUILD
@@ -165,7 +167,7 @@ static void CFSearchPathForDirectoriesInDomains(unsigned flags,
 static void CFTemporaryDirectory(char *s, size_t len)
 {
 #if __has_feature(objc_arc)
-   CFStringRef path = (__bridge_retained CFStringRef)NSTemporaryDirectory();
+   CFStringRef path = (__bridge CFStringRef)NSTemporaryDirectory();
 #else
    CFStringRef path = (CFStringRef)NSTemporaryDirectory();
 #endif
@@ -302,7 +304,7 @@ static void frontend_darwin_get_os(char *s, size_t len, int *major, int *minor)
 {
 #if defined(IOS)
    get_ios_version(major, minor);
-   strlcpy(s, "iOS", len);
+   strcpy_literal(s, "iOS");
 #elif defined(OSX)
 
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 101300 // MAC_OS_X_VERSION_10_13
@@ -310,6 +312,8 @@ static void frontend_darwin_get_os(char *s, size_t len, int *major, int *minor)
    *major = (int)version.majorVersion;
    *minor = (int)version.minorVersion;
 #else
+    /* MacOS 10.9 includes the [NSProcessInfo operatingSystemVersion] function, but it's not in the 10.9 SDK. So, call it via NSInvocation */
+    /* Credit: OpenJDK (https://github.com/openjdk/jdk/commit/d4c7db50) */
    if ([[NSProcessInfo processInfo] respondsToSelector:@selector(operatingSystemVersion)])
    {
       typedef struct
@@ -318,7 +322,12 @@ static void frontend_darwin_get_os(char *s, size_t len, int *major, int *minor)
          NSInteger minorVersion;
          NSInteger patchVersion;
       } NSMyOSVersion;
-      NSMyOSVersion version = ((NSMyOSVersion(*)(id, SEL))objc_msgSend_stret)([NSProcessInfo processInfo], @selector(operatingSystemVersion));
+       NSMyOSVersion version;
+       NSMethodSignature *sig = [[NSProcessInfo processInfo] methodSignatureForSelector:@selector(operatingSystemVersion)];
+       NSInvocation *invoke = [NSInvocation invocationWithMethodSignature:sig];
+       invoke.selector = @selector(operatingSystemVersion);
+       [invoke invokeWithTarget:[NSProcessInfo processInfo]];
+       [invoke getReturnValue:&version];
       *major = (int)version.majorVersion;
       *minor = (int)version.minorVersion;
    }
@@ -328,15 +337,17 @@ static void frontend_darwin_get_os(char *s, size_t len, int *major, int *minor)
       Gestalt(gestaltSystemVersionMajor, (SInt32*)major);
    }
 #endif
-   strlcpy(s, "OSX", len);
+   strcpy_literal(s, "OSX");
 #endif
 }
 
-static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
+static void frontend_darwin_get_env(int *argc, char *argv[],
       void *args, void *params_data)
 {
    CFURLRef bundle_url;
    CFStringRef bundle_path;
+   CFURLRef resource_url;
+   CFStringRef resource_path;
 #if TARGET_OS_IPHONE
    char resolved_home_dir_buf[
       PATH_MAX_LENGTH]                   = {0};
@@ -345,6 +356,8 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
 #endif
    char temp_dir[PATH_MAX_LENGTH]        = {0};
    char bundle_path_buf[PATH_MAX_LENGTH] = {0};
+   char resource_path_buf[PATH_MAX_LENGTH] = {0};
+   char full_resource_path_buf[PATH_MAX_LENGTH] = {0};
    char home_dir_buf[PATH_MAX_LENGTH]    = {0};
    CFBundleRef bundle                    = CFBundleGetMainBundle();
 
@@ -353,10 +366,15 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
 
    bundle_url  = CFBundleCopyBundleURL(bundle);
    bundle_path = CFURLCopyPath(bundle_url);
+   
+   resource_url = CFBundleCopyResourcesDirectoryURL(bundle);
+   resource_path = CFURLCopyPath(resource_url);
 
    CFStringGetCString(bundle_path,
          bundle_path_buf, sizeof(bundle_path_buf), kCFStringEncodingUTF8);
-
+   CFStringGetCString(resource_path,
+         resource_path_buf, sizeof(resource_path_buf), kCFStringEncodingUTF8);
+   fill_pathname_join(full_resource_path_buf, bundle_path_buf, resource_path_buf, sizeof(full_resource_path_buf));
    CFSearchPathForDirectoriesInDomains(CFDocumentDirectory,
          CFUserDomainMask, 1, home_dir_buf, sizeof(home_dir_buf));
 
@@ -385,20 +403,12 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
          home_dir_buf, "shaders_glsl",
          sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
 #endif
-#if TARGET_OS_IOS
-    int major, minor;
-    get_ios_version(&major, &minor);
-    if (major >= 10 )
-        fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE],
-              bundle_path_buf, "modules", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
-    else
-        fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE],
-              home_dir_buf, "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
-#elif TARGET_OS_TV
+#ifdef HAVE_UPDATE_CORES
     fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE],
-                       bundle_path_buf, "modules", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
+		    home_dir_buf, "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
 #else
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE], home_dir_buf, "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
+    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE],
+		    bundle_path_buf, "modules", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
 #endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], home_dir_buf, "info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], home_dir_buf, "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
@@ -431,8 +441,6 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
 #ifdef HAVE_CG
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SHADER], home_dir_buf, "shaders_cg", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
 #endif
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], home_dir_buf, "audio_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], home_dir_buf, "video_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_PLAYLIST], application_data, "playlists", sizeof(g_defaults.dirs[DEFAULT_DIR_PLAYLIST]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_THUMBNAILS], application_data, "thumbnails", sizeof(g_defaults.dirs[DEFAULT_DIR_THUMBNAILS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG], application_data, "config", sizeof(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG]));
@@ -440,29 +448,42 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS], application_data, "downloads", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT], application_data, "screenshots", sizeof(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT]));
 #if defined(RELEASE_BUILD)
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SHADER], bundle_path_buf, "Contents/Resources/shaders", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE], bundle_path_buf, "Contents/Resources/cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], bundle_path_buf, "Contents/Resources/info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], bundle_path_buf, "Contents/Resources/overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SHADER], application_data, "shaders", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE], application_data, "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], application_data, "info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], application_data, "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
 #ifdef HAVE_VIDEO_LAYOUT
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], bundle_path_buf, "Contents/Resources/layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], application_data, "layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
 #endif
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], bundle_path_buf, "Contents/Resources/autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS], bundle_path_buf, "Contents/Resources/assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_DATABASE], bundle_path_buf, "Contents/Resources/database/rdb", sizeof(g_defaults.dirs[DEFAULT_DIR_DATABASE]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CURSOR], bundle_path_buf, "Contents/Resources/database/cursors", sizeof(g_defaults.dirs[DEFAULT_DIR_CURSOR]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS], bundle_path_buf, "Contents/Resources/cht", sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
-#endif
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], application_data, "autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS], application_data, "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_DATABASE], application_data, "database/rdb", sizeof(g_defaults.dirs[DEFAULT_DIR_DATABASE]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CURSOR], application_data, "database/cursors", sizeof(g_defaults.dirs[DEFAULT_DIR_CURSOR]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS], application_data, "cht", sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], application_data, "audio_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], application_data, "video_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+#else
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], home_dir_buf, "audio_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], home_dir_buf, "video_filters", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
 #endif
 
-#if TARGET_OS_IPHONE
+#endif
+
     char assets_zip_path[PATH_MAX_LENGTH];
 #if TARGET_OS_IOS
-    if (major > 8)
-       strlcpy(g_defaults.path.buildbot_server_url, "http://buildbot.libretro.com/nightly/apple/ios9/latest/", sizeof(g_defaults.path.buildbot_server_url));
+    {
+       int major, minor;
+       get_ios_version(&major, &minor);
+       if (major > 8)
+          strcpy_literal(g_defaults.path_buildbot_server_url, "http://buildbot.libretro.com/nightly/apple/ios9/latest/");
+    }
 #endif
 
+#if TARGET_OS_IOS
     fill_pathname_join(assets_zip_path, bundle_path_buf, "assets.zip", sizeof(assets_zip_path));
+#else
+    fill_pathname_join(assets_zip_path, full_resource_path_buf, "assets.zip", sizeof(assets_zip_path));
+#endif
 
     if (path_is_valid(assets_zip_path))
     {
@@ -475,11 +496,15 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
              assets_zip_path);
        configuration_set_string(settings,
              settings->arrays.bundle_assets_dst,
-             home_dir_buf);
-       /* TODO/FIXME: Just hardcode this for now */
-       configuration_set_uint(settings, settings->uints.bundle_assets_extract_version_current, 130);
-    }
+#if TARGET_OS_IOS || TARGET_OS_TV
+             home_dir_buf
+#else
+             application_data
 #endif
+       );
+       /* TODO/FIXME: Just hardcode this for now */
+       configuration_set_uint(settings, settings->uints.bundle_assets_extract_version_current, 1);
+    }
 
    CFTemporaryDirectory(temp_dir, sizeof(temp_dir));
    strlcpy(g_defaults.dirs[DEFAULT_DIR_CACHE],
@@ -500,9 +525,13 @@ static void frontend_darwin_get_environment_settings(int *argc, char *argv[],
 
    CFRelease(bundle_path);
    CFRelease(bundle_url);
+
+#ifndef IS_SALAMANDER
+   dir_check_defaults("custom.ini");
+#endif
 }
 
-static void frontend_darwin_load_content(void)
+static void frontend_darwin_content_loaded(void)
 {
    ui_companion_driver_notify_content_loaded();
 }
@@ -698,26 +727,48 @@ end:
    return ret;
 }
 
-static enum frontend_architecture frontend_darwin_get_architecture(void)
+#ifndef OSX
+#ifndef CPU_ARCH_ABI64
+#define CPU_ARCH_ABI64          0x01000000
+#endif
+
+#ifndef CPU_TYPE_ARM64
+#define CPU_TYPE_ARM64          (CPU_TYPE_ARM | CPU_ARCH_ABI64)
+#endif
+#endif
+
+static enum frontend_architecture frontend_darwin_get_arch(void)
 {
-   struct utsname buffer;
-
-   if (uname(&buffer) != 0)
-      return FRONTEND_ARCH_NONE;
-
 #ifdef OSX
+    struct utsname buffer;
+
+    if (uname(&buffer) != 0)
+       return FRONTEND_ARCH_NONE;
+    
    if (string_is_equal(buffer.machine, "x86_64"))
       return FRONTEND_ARCH_X86_64;
    if (string_is_equal(buffer.machine, "x86"))
       return FRONTEND_ARCH_X86;
    if (string_is_equal(buffer.machine, "Power Macintosh"))
       return FRONTEND_ARCH_PPC;
-
-   return FRONTEND_ARCH_NONE;
+   if (string_is_equal(buffer.machine, "arm64"))
+      return FRONTEND_ARCH_ARMV8;
 #else
-   /* TODO/FIXME - make this more flexible */
-   return FRONTEND_ARCH_ARMV7;
+   cpu_type_t type;
+   size_t size = sizeof(type);
+
+   sysctlbyname("hw.cputype", &type, &size, NULL, 0);
+    
+   if (type == CPU_TYPE_X86_64)
+      return FRONTEND_ARCH_X86_64;
+   else if (type == CPU_TYPE_X86)
+      return FRONTEND_ARCH_X86;
+   else if (type == CPU_TYPE_ARM64)
+      return FRONTEND_ARCH_ARMV8;
+   else if (type == CPU_TYPE_ARM)
+      return FRONTEND_ARCH_ARMV7;
 #endif
+    return FRONTEND_ARCH_NONE;
 }
 
 static int frontend_darwin_parse_drive_list(void *data, bool load_content)
@@ -761,7 +812,7 @@ static int frontend_darwin_parse_drive_list(void *data, bool load_content)
    return ret;
 }
 
-static uint64_t frontend_darwin_get_mem_total(void)
+static uint64_t frontend_darwin_get_total_mem(void)
 {
 #if defined(OSX)
     uint64_t size;
@@ -777,7 +828,7 @@ static uint64_t frontend_darwin_get_mem_total(void)
 #endif
 }
 
-static uint64_t frontend_darwin_get_mem_used(void)
+static uint64_t frontend_darwin_get_free_mem(void)
 {
 #if (defined(OSX) && !(defined(__ppc__) || defined(__ppc64__)))
     vm_size_t page_size;
@@ -944,44 +995,47 @@ static bool accessibility_speak_macos(int speed,
 #endif
 
 frontend_ctx_driver_t frontend_ctx_darwin = {
-   frontend_darwin_get_environment_settings,
-   NULL,                         /* init */
-   NULL,                         /* deinit */
-   NULL,                         /* exitspawn */
-   NULL,                         /* process_args */
-   NULL,                         /* exec */
-   NULL,                         /* set_fork */
-   NULL,                         /* shutdown */
-   frontend_darwin_get_name,
-   frontend_darwin_get_os,
-   frontend_darwin_get_rating,
-   frontend_darwin_load_content,
-   frontend_darwin_get_architecture,
-   frontend_darwin_get_powerstate,
-   frontend_darwin_parse_drive_list,
-   frontend_darwin_get_mem_total,
-   frontend_darwin_get_mem_used,
-   NULL,                         /* install_signal_handler */
-   NULL,                         /* get_sighandler_state */
-   NULL,                         /* set_sighandler_state */
-   NULL,                         /* destroy_signal_handler_state */
-   NULL,                         /* attach_console */
-   NULL,                         /* detach_console */
-   NULL,                         /* watch_path_for_changes */
-   NULL,                         /* check_for_path_changes */
-   NULL,                         /* set_sustained_performance_mode */
+   frontend_darwin_get_env,         /* get_env */
+   NULL,                            /* init */
+   NULL,                            /* deinit */
+   NULL,                            /* exitspawn */
+   NULL,                            /* process_args */
+   NULL,                            /* exec */
+   NULL,                            /* set_fork */
+   NULL,                            /* shutdown */
+   frontend_darwin_get_name,        /* get_name */
+   frontend_darwin_get_os,          /* get_os               */
+   frontend_darwin_get_rating,      /* get_rating           */
+   frontend_darwin_content_loaded,  /* content_loaded       */
+   frontend_darwin_get_arch,        /* get_architecture     */
+   frontend_darwin_get_powerstate,  /* get_powerstate       */
+   frontend_darwin_parse_drive_list,/* parse_drive_list     */
+   frontend_darwin_get_total_mem,   /* get_total_mem        */
+   frontend_darwin_get_free_mem,    /* get_free_mem         */
+   NULL,                            /* install_signal_handler */
+   NULL,                            /* get_sighandler_state */
+   NULL,                            /* set_sighandler_state */
+   NULL,                            /* destroy_signal_handler_state */
+   NULL,                            /* attach_console */
+   NULL,                            /* detach_console */
+   NULL,                            /* get_lakka_version */
+   NULL,                            /* set_screen_brightness */
+   NULL,                            /* watch_path_for_changes */
+   NULL,                            /* check_for_path_changes */
+   NULL,                            /* set_sustained_performance_mode */
 #if (defined(OSX) && !(defined(__ppc__) || defined(__ppc64__)))
-    frontend_darwin_get_cpu_model_name,
+    frontend_darwin_get_cpu_model_name, /* get_cpu_model_name */
 #else
-   NULL,
+   NULL,                            /* get_cpu_model_name */
 #endif
-   NULL,                         /* get_user_language */
+   NULL,                            /* get_user_language   */
 #if (defined(OSX) && !(defined(__ppc__) || defined(__ppc64__)))
-   is_narrator_running_macos,    /* is_narrator_running */
-   accessibility_speak_macos,    /* accessibility_speak */
+   is_narrator_running_macos,       /* is_narrator_running */
+   accessibility_speak_macos,       /* accessibility_speak */
 #else
-   NULL,                         /* is_narrator_running */
-   NULL,                         /* accessibility_speak */
+   NULL,                            /* is_narrator_running */
+   NULL,                            /* accessibility_speak */
 #endif
-   "darwin",
+   "darwin",                        /* ident               */
+   NULL                             /* get_video_driver    */
 };

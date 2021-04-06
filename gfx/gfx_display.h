@@ -35,6 +35,12 @@
 
 RETRO_BEGIN_DECLS
 
+/* Number of pixels corner-to-corner on a 1080p
+ * display:
+ * > sqrt((1920 * 1920) + (1080 * 1080))
+ * Note: This is a double, so no suffix */
+#define DIAGONAL_PIXELS_1080P 2202.90717008229831581901
+
 #define COLOR_TEXT_ALPHA(color, alpha) (color & 0xFFFFFF00) | alpha
 
 #define HEX_R(hex) ((hex >> 16) & 0xFF) * (1.0f / 255.0f)
@@ -49,6 +55,16 @@ RETRO_BEGIN_DECLS
 }
 
 #define gfx_display_set_alpha(color, alpha_value) (color[3] = color[7] = color[11] = color[15] = (alpha_value))
+
+/* Returns true if an animation is still active or
+ * when the display framebuffer still is dirty and
+ * therefore it still needs to be rendered onscreen.
+ *
+ * This macro can be used for optimization purposes
+ * so that we don't have to render the display graphics per-frame
+ * unless a change has happened.
+ * */
+#define GFX_DISPLAY_GET_UPDATE_PENDING(p_anim, p_disp) (ANIM_IS_ACTIVE(p_anim) || p_disp->framebuf_dirty)
 
 enum menu_driver_id_type
 {
@@ -89,14 +105,6 @@ enum gfx_display_driver_type
    GFX_VIDEO_DRIVER_SWITCH
 };
 
-typedef struct gfx_display_ctx_clearcolor
-{
-   float r;
-   float g;
-   float b;
-   float a;
-} gfx_display_ctx_clearcolor_t;
-
 typedef struct gfx_display_frame_info
 {
    bool shadows_enable;
@@ -113,16 +121,10 @@ typedef struct gfx_display_ctx_driver
    /* Draw one of the menu pipeline shaders. */
    void (*draw_pipeline)(gfx_display_ctx_draw_t *draw,
          void *data, unsigned video_width, unsigned video_height);
-   void (*viewport)(gfx_display_ctx_draw_t *draw, void *data);
    /* Start blending operation. */
    void (*blend_begin)(void *data);
    /* Finish blending operation. */
    void (*blend_end)(void *data);
-   /* Set the clear color back to its default values. */
-   void (*restore_clear_color)(void);
-   /* Set the color to be used when clearing the screen */
-   void (*clear_color)(gfx_display_ctx_clearcolor_t *clearcolor,
-         void *data);
    /* Get the default Model-View-Projection matrix */
    void *(*get_default_mvp)(void *data);
    /* Get the default vertices matrix */
@@ -147,37 +149,34 @@ typedef struct gfx_display_ctx_driver
 
 struct gfx_display_ctx_draw
 {
-   float x;
-   float y;
    float *color;
    const float *vertex;
    const float *tex_coord;
-   unsigned width;
-   unsigned height;
-   uintptr_t texture;
-   size_t vertex_count;
+   const void *backend_data;
    struct video_coords *coords;
    void *matrix_data;
-   enum gfx_display_prim_type prim_type;
-   struct
-   {
-      unsigned id;
-      const void *backend_data;
-      size_t backend_data_size;
-      bool active;
-   } pipeline;
+   uintptr_t texture;
+   size_t vertex_count;
+   size_t backend_data_size;
+   unsigned width;
+   unsigned height;
+   unsigned pipeline_id;
+   float x;
+   float y;
    float rotation;
    float scale_factor;
+   enum gfx_display_prim_type prim_type;
+   bool pipeline_active;
 };
 
 typedef struct gfx_display_ctx_rotate_draw
 {
-   bool scale_enable;
+   math_matrix_4x4 *matrix;
    float rotation;
    float scale_x;
    float scale_y;
    float scale_z;
-   math_matrix_4x4 *matrix;
+   bool scale_enable;
 } gfx_display_ctx_rotate_draw_t;
 
 typedef struct gfx_display_ctx_coord_draw
@@ -204,22 +203,22 @@ typedef struct gfx_display_ctx_powerstate
 
 struct gfx_display
 {
-   bool has_windowed;
-   bool msg_force;
-   bool framebuf_dirty;
-   
+   gfx_display_ctx_driver_t *dispctx;
+   video_coord_array_t dispca; /* ptr alignment */
+
    /* Width, height and pitch of the display framebuffer */
+   size_t   framebuf_pitch;
    unsigned framebuf_width;
    unsigned framebuf_height;
-   size_t   framebuf_pitch;
 
    /* Height of the display header */
    unsigned header_height;
 
    enum menu_driver_id_type menu_driver_id;
 
-   video_coord_array_t dispca;
-   gfx_display_ctx_driver_t *dispctx;
+   bool has_windowed;
+   bool msg_force;
+   bool framebuf_dirty;
 };
 
 typedef struct gfx_display gfx_display_t;
@@ -228,21 +227,8 @@ void gfx_display_free(void);
 
 void gfx_display_init(void);
 
-void gfx_display_blend_begin(void *data);
-
-void gfx_display_blend_end(void *data);
-
-void gfx_display_push_quad(
-      unsigned width, unsigned height,
-      const float *colors, int x1, int y1,
-      int x2, int y2);
-
-void gfx_display_snow(
-      int16_t pointer_x,
-      int16_t pointer_y,
-      int width, int height);
-
 void gfx_display_draw_cursor(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -258,55 +244,34 @@ void gfx_display_draw_text(
       bool draw_outside);
 
 font_data_t *gfx_display_font(
+      gfx_display_t *p_disp,
       enum application_special_type type,
       float font_size,
       bool video_is_threaded);
 
-void gfx_display_scissor_begin(void *data, unsigned video_width, unsigned video_height, int x, int y, unsigned width, unsigned height);
-void gfx_display_scissor_end(void *data, unsigned width, unsigned height);
+void gfx_display_scissor_begin(
+      gfx_display_t *p_disp,
+      void *userdata,
+      unsigned video_width,
+      unsigned video_height,
+      int x, int y, unsigned width, unsigned height);
 
 void gfx_display_font_free(font_data_t *font);
-
-void gfx_display_coords_array_reset(void);
-video_coord_array_t *gfx_display_get_coords_array(void);
 
 void gfx_display_set_width(unsigned width);
 void gfx_display_get_fb_size(unsigned *fb_width, unsigned *fb_height,
       size_t *fb_pitch);
 void gfx_display_set_height(unsigned height);
-void gfx_display_set_header_height(unsigned height);
-unsigned gfx_display_get_header_height(void);
-size_t gfx_display_get_framebuffer_pitch(void);
 void gfx_display_set_framebuffer_pitch(size_t pitch);
 
-bool gfx_display_get_msg_force(void);
 void gfx_display_set_msg_force(bool state);
-bool gfx_display_get_update_pending(void);
-void gfx_display_set_viewport(unsigned width, unsigned height);
-void gfx_display_unset_viewport(unsigned width, unsigned height);
-bool gfx_display_get_framebuffer_dirty_flag(void);
-void gfx_display_set_framebuffer_dirty_flag(void);
-void gfx_display_unset_framebuffer_dirty_flag(void);
-bool gfx_display_init_first_driver(bool video_is_threaded);
-bool gfx_display_restore_clear_color(void);
+bool gfx_display_init_first_driver(gfx_display_t *p_disp,
+      bool video_is_threaded);
 
 gfx_display_t *disp_get_ptr(void);
 
-/* TODO/FIXME - this is no longer used - consider getting rid of it */
-void gfx_display_clear_color(gfx_display_ctx_clearcolor_t *color, void *data);
-
-void gfx_display_draw(gfx_display_ctx_draw_t *draw,
-      void *data,
-      unsigned video_width, 
-      unsigned video_height);
-
-void gfx_display_draw_blend(
-      gfx_display_ctx_draw_t *draw,
-      void *data,
-      unsigned video_width,
-      unsigned video_height);
-
 void gfx_display_draw_keyboard(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -315,26 +280,14 @@ void gfx_display_draw_keyboard(
       char *grid[], unsigned id,
       unsigned text_color);
 
-void gfx_display_draw_pipeline(
-      gfx_display_ctx_draw_t *draw,
-      void *userdata,
-      unsigned video_width,
-      unsigned video_height);
-
 void gfx_display_draw_bg(
+      gfx_display_t *p_disp,
       gfx_display_ctx_draw_t *draw,
       void *userdata,
       bool add_opacity, float opacity_override);
 
-void gfx_display_draw_gradient(
-      gfx_display_ctx_draw_t *draw,
-      void *userdata,
-      unsigned video_width,
-      unsigned video_height,
-      float menu_wallpaper_opacity
-      );
-
 void gfx_display_draw_quad(
+      gfx_display_t *p_disp,
       void *data,
       unsigned video_width,
       unsigned video_height,
@@ -343,6 +296,7 @@ void gfx_display_draw_quad(
       float *color);
 
 void gfx_display_draw_polygon(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -353,15 +307,8 @@ void gfx_display_draw_polygon(
       unsigned width, unsigned height,
       float *color);
 
-void gfx_display_draw_texture(
-      void *userdata,
-      unsigned video_width,
-      unsigned video_height,
-      int x, int y, unsigned w, unsigned h,
-      unsigned width, unsigned height,
-      float *color, uintptr_t texture);
-
 void gfx_display_draw_texture_slice(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -370,42 +317,38 @@ void gfx_display_draw_texture_slice(
       unsigned width, unsigned height,
       float *color, unsigned offset, float scale_factor, uintptr_t texture);
 
-void gfx_display_rotate_z(gfx_display_ctx_rotate_draw_t *draw, void *data);
+void gfx_display_rotate_z(gfx_display_t *p_disp,
+      gfx_display_ctx_rotate_draw_t *draw, void *data);
 
-font_data_t *gfx_display_font_file(char* fontpath, float font_size, bool is_threaded);
+font_data_t *gfx_display_font_file(gfx_display_t *p_disp,
+      char* fontpath, float font_size, bool is_threaded);
 
 bool gfx_display_reset_textures_list(
       const char *texture_path, const char *iconpath,
       uintptr_t *item, enum texture_filter_type filter_type,
       unsigned *width, unsigned *height);
 
-bool gfx_display_reset_textures_list_buffer(
-        uintptr_t *item, enum texture_filter_type filter_type,
-        void* buffer, unsigned buffer_len,
-        enum image_type_enum image_type,
-        unsigned *width, unsigned *height);
-
 /* Returns the OSK key at a given position */
 int gfx_display_osk_ptr_at_pos(void *data, int x, int y,
       unsigned width, unsigned height);
 
-enum menu_driver_id_type gfx_display_get_driver_id(void);
+float gfx_display_get_adjusted_scale(
+      gfx_display_t *p_disp,
+      float base_scale, float scale_factor, unsigned width);
 
-void gfx_display_set_driver_id(enum menu_driver_id_type type);
+float gfx_display_get_dpi_scale_internal(unsigned width, unsigned height);
 
-float gfx_display_get_dpi_scale(unsigned width, unsigned height);
+float gfx_display_get_dpi_scale(
+      gfx_display_t *p_disp,
+      void *settings_data,
+      unsigned width, unsigned height);
 
-float gfx_display_get_widget_dpi_scale(
-      unsigned width, unsigned height, bool fullscreen);
-
-float gfx_display_get_widget_pixel_scale(
-      unsigned width, unsigned height, bool fullscreen);
-
-void gfx_display_allocate_white_texture(void);
+void gfx_display_init_white_texture(uintptr_t white_texture);
 
 bool gfx_display_driver_exists(const char *s);
 
-bool gfx_display_init_first_driver(bool video_is_threaded);
+bool gfx_display_init_first_driver(gfx_display_t *p_disp,
+      bool video_is_threaded);
 
 extern uintptr_t gfx_display_white_texture;
 

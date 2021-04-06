@@ -324,24 +324,14 @@ static bool d3d9_init_multipass(d3d9_video_t *d3d, const char *shader_path)
    unsigned i;
    bool            use_extra_pass = false;
    struct video_shader_pass *pass = NULL;
-   config_file_t            *conf = video_shader_read_preset(shader_path);
-
-   if (!conf)
-   {
-      RARCH_ERR("[D3D9]: Failed to load preset.\n");
-      return false;
-   }
 
    memset(&d3d->shader, 0, sizeof(d3d->shader));
 
-   if (!video_shader_read_conf_preset(conf, &d3d->shader))
+   if (!video_shader_load_preset_into_shader(shader_path, &d3d->shader))
    {
-      config_file_free(conf);
       RARCH_ERR("[D3D9]: Failed to parse shader preset.\n");
       return false;
    }
-
-   config_file_free(conf);
 
    RARCH_LOG("[D3D9]: Found %u shaders.\n", d3d->shader.passes);
 
@@ -1158,7 +1148,11 @@ static bool d3d9_init_internal(d3d9_video_t *d3d,
 
 #ifdef HAVE_WINDOW
    memset(&d3d->windowClass, 0, sizeof(d3d->windowClass));
-   d3d->windowClass.lpfnWndProc = WndProcD3D;
+   d3d->windowClass.lpfnWndProc = wnd_proc_d3d_common;
+#ifdef HAVE_DINPUT
+   if (string_is_equal(settings->arrays.input_driver, "dinput"))
+      d3d->windowClass.lpfnWndProc = wnd_proc_d3d_dinput;
+#endif
    win32_window_init(&d3d->windowClass, true, NULL);
 #endif
 
@@ -1528,7 +1522,7 @@ static bool d3d9_frame(void *data, const void *frame,
    unsigned width                      = video_info->width;
    unsigned height                     = video_info->height;
    bool statistics_show                = video_info->statistics_show;
-   bool black_frame_insertion          = video_info->black_frame_insertion;
+   unsigned black_frame_insertion      = video_info->black_frame_insertion;
    struct font_params *osd_params      = (struct font_params*)
       &video_info->osd_stat_params;
    const char *stat_text               = video_info->stat_text;
@@ -1577,15 +1571,6 @@ static bool d3d9_frame(void *data, const void *frame,
    d3d9_set_viewports(d3d->dev, &screen_vp);
    d3d9_clear(d3d->dev, 0, 0, D3DCLEAR_TARGET, 0, 1, 0);
 
-   /* Insert black frame first, so we
-    * can screenshot, etc. */
-   if (black_frame_insertion)
-   {
-      if (!d3d9_swap(d3d, d3d->dev) || d3d->needs_restore)
-         return true;
-      d3d9_clear(d3d->dev, 0, 0, D3DCLEAR_TARGET, 0, 1, 0);
-   }
-
    if (!d3d->renderchain_driver->render(
             d3d, frame, frame_width, frame_height,
             pitch, d3d->dev_rotation))
@@ -1593,6 +1578,17 @@ static bool d3d9_frame(void *data, const void *frame,
       RARCH_ERR("[D3D9]: Failed to render scene.\n");
       return false;
    }
+   
+   if (black_frame_insertion && !d3d->menu->enabled)
+   {
+      unsigned n;
+      for (n = 0; n < video_info->black_frame_insertion; ++n) 
+      {   
+        if (!d3d9_swap(d3d, d3d->dev) || d3d->needs_restore)
+          return true;
+        d3d9_clear(d3d->dev, 0, 0, D3DCLEAR_TARGET, 0, 1, 0);
+      }
+   }   
 
 #ifdef HAVE_MENU
    if (d3d->menu && d3d->menu->enabled)
@@ -1726,7 +1722,7 @@ static bool d3d9_set_shader(void *data,
          if (type != supported_shader_type)
          {
             RARCH_WARN("[D3D9]: Shader preset %s is using unsupported shader type %s, falling back to stock %s.\n",
-               path, video_shader_to_str(type), video_shader_to_str(supported_shader_type));
+               path, video_shader_type_to_str(type), video_shader_type_to_str(supported_shader_type));
             break;
          }
       

@@ -26,63 +26,58 @@
 
 struct gfx_widget_screenshot_state
 {
-   float alpha;
    uintptr_t texture;
    unsigned texture_width;
    unsigned texture_height;
-   char shotname[256];
-   char filename[256];
-   bool loaded;
 
-   float scale_factor;
-   float y;
    unsigned height;
    unsigned width;
    unsigned thumbnail_width;
    unsigned thumbnail_height;
-   gfx_timer_t timer;
-
    unsigned shotname_length;
+
+   float scale_factor;
+   float y;
+   float alpha;
+   gfx_timer_t timer;         /* float alignment */
+
+   char shotname[256];
+   char filename[256];
+   bool loaded;
 };
 
 typedef struct gfx_widget_screenshot_state gfx_widget_screenshot_state_t;
 
 static gfx_widget_screenshot_state_t p_w_screenshot_st = {
-   0.0f,
-   0,
-   0,
-   0,
-   {0},
-   {0},
-   false,
+   0,             /* texture */
+   0,             /* texture_width */
+   0,             /* texture_height */
+   0,             /* height */
+   0,             /* width */
+   0,             /* thumbnail_width */
+   0,             /* thumbnail_height */
+   0,             /* shotname_length */
+   0.0f,          /* scale_factor */
+   0.0f,          /* y */
+   0.0f,          /* alpha */
+   0.0f,          /* timer */
 
-   0.0f,
-   0.0f,
-   0,
-   0,
-   0,
-   0,
-   0.0f,
-
-   0
+   {0},           /* shotname */
+   {0},           /* filename */
+   false          /* loaded */
 };
-
-static gfx_widget_screenshot_state_t* gfx_widget_screenshot_get_ptr(void)
-{
-   return &p_w_screenshot_st;
-}
 
 static void gfx_widget_screenshot_fadeout(void *userdata)
 {
+   gfx_animation_ctx_entry_t entry;
    settings_t *settings                 = config_get_ptr();
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)userdata;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
-   gfx_animation_ctx_entry_t entry;
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    entry.cb             = NULL;
    entry.easing_enum    = EASING_OUT_QUAD;
    entry.subject        = &state->alpha;
-   entry.tag            = gfx_widgets_get_generic_tag(p_dispwidget);
+   entry.tag            = p_dispwidget->gfx_widgets_generic_tag;
    entry.target_value   = 0.0f;
    entry.userdata       = NULL;
 
@@ -102,15 +97,15 @@ static void gfx_widget_screenshot_fadeout(void *userdata)
 
 static void gfx_widgets_play_screenshot_flash(void *data)
 {
+   gfx_animation_ctx_entry_t entry;
    settings_t *settings                 = config_get_ptr();
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)data;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
-   gfx_animation_ctx_entry_t entry;
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    entry.cb             = gfx_widget_screenshot_fadeout;
    entry.easing_enum    = EASING_IN_QUAD;
    entry.subject        = &state->alpha;
-   entry.tag            = gfx_widgets_get_generic_tag(p_dispwidget);
+   entry.tag            = p_dispwidget->gfx_widgets_generic_tag;
    entry.target_value   = 1.0f;
    entry.userdata       = p_dispwidget;
 
@@ -134,7 +129,7 @@ void gfx_widget_screenshot_taken(
 {
    settings_t *settings                 = config_get_ptr();
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)data;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    if (settings->uints.notification_show_screenshot_flash != NOTIFICATION_SHOW_SCREENSHOT_FLASH_OFF)
       gfx_widgets_play_screenshot_flash(p_dispwidget);
@@ -148,7 +143,7 @@ void gfx_widget_screenshot_taken(
 
 static void gfx_widget_screenshot_dispose(void *userdata)
 {
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    state->loaded  = false;
    video_driver_texture_unload(&state->texture);
@@ -157,15 +152,15 @@ static void gfx_widget_screenshot_dispose(void *userdata)
 
 static void gfx_widget_screenshot_end(void *userdata)
 {
+   gfx_animation_ctx_entry_t entry;
    settings_t *settings                 = config_get_ptr();
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)userdata;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
-   gfx_animation_ctx_entry_t entry;
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    entry.cb             = gfx_widget_screenshot_dispose;
    entry.easing_enum    = EASING_OUT_QUAD;
    entry.subject        = &state->y;
-   entry.tag            = gfx_widgets_get_generic_tag(p_dispwidget);
+   entry.tag            = p_dispwidget->gfx_widgets_generic_tag;
    entry.target_value   = -((float)state->height);
    entry.userdata       = NULL;
 
@@ -189,7 +184,7 @@ static void gfx_widget_screenshot_end(void *userdata)
 
 static void gfx_widget_screenshot_free(void)
 {
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
 
    state->alpha         = 0.0f;
    gfx_widget_screenshot_dispose(NULL);
@@ -197,14 +192,21 @@ static void gfx_widget_screenshot_free(void)
 
 static void gfx_widget_screenshot_frame(void* data, void *user_data)
 {
+   static float pure_white[16]          = {
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+      1.00, 1.00, 1.00, 1.00,
+   };
    video_frame_info_t *video_info       = (video_frame_info_t*)data;
    void *userdata                       = video_info->userdata;
    unsigned video_width                 = video_info->width;
    unsigned video_height                = video_info->height;
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)user_data;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
-   gfx_widget_font_data_t* font_regular = gfx_widgets_get_font_regular(p_dispwidget);
-   float* pure_white                    = gfx_widgets_get_pure_white();
+   gfx_display_t            *p_disp     = disp_get_ptr();
+   gfx_animation_t          *p_anim     = anim_get_ptr();
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
+   gfx_widget_font_data_t* font_regular = &p_dispwidget->gfx_widget_fonts.regular;
    int padding                          = (state->height - (font_regular->line_height * 2.0f)) / 2.0f;
 
    /* Screenshot */
@@ -213,27 +215,30 @@ static void gfx_widget_screenshot_frame(void* data, void *user_data)
       char shotname[256];
       gfx_animation_ctx_ticker_t ticker;
 
-      gfx_display_set_alpha(gfx_widgets_get_backdrop_orig(), DEFAULT_BACKDROP);
+      gfx_display_set_alpha(p_dispwidget->backdrop_orig, DEFAULT_BACKDROP);
 
-      gfx_display_draw_quad(userdata,
-         video_width, video_height,
-         0, state->y,
-         state->width, state->height,
-         video_width, video_height,
-         gfx_widgets_get_backdrop_orig()
-      );
+      gfx_display_draw_quad(
+            p_disp,
+            userdata,
+            video_width, video_height,
+            0, state->y,
+            state->width, state->height,
+            video_width, video_height,
+            p_dispwidget->backdrop_orig
+            );
 
       gfx_display_set_alpha(pure_white, 1.0f);
       gfx_widgets_draw_icon(
-         userdata,
-         video_width,
-         video_height,
-         state->thumbnail_width,
-         state->thumbnail_height,
-         state->texture,
-         0, state->y,
-         0, 1, pure_white
-      );
+            userdata,
+            p_disp,
+            video_width,
+            video_height,
+            state->thumbnail_width,
+            state->thumbnail_height,
+            state->texture,
+            0, state->y,
+            0, 1, pure_white
+            );
 
       gfx_widgets_draw_text(font_regular,
             msg_hash_to_str(MSG_SCREENSHOT_SAVED),
@@ -244,7 +249,7 @@ static void gfx_widget_screenshot_frame(void* data, void *user_data)
             TEXT_ALIGN_LEFT,
             true);
 
-      ticker.idx        = gfx_animation_get_ticker_idx();
+      ticker.idx        = p_anim->ticker_idx;
       ticker.len        = state->shotname_length;
       ticker.s          = shotname;
       ticker.selected   = true;
@@ -266,14 +271,16 @@ static void gfx_widget_screenshot_frame(void* data, void *user_data)
    if (state->alpha > 0.0f)
    {
       gfx_display_set_alpha(pure_white, state->alpha);
-      gfx_display_draw_quad(userdata,
-         video_width,
-         video_height,
-         0, 0,
-         video_width, video_height,
-         video_width, video_height,
-         pure_white
-      );
+      gfx_display_draw_quad(
+            p_disp,
+            userdata,
+            video_width,
+            video_height,
+            0, 0,
+            video_width, video_height,
+            video_width, video_height,
+            pure_white
+            );
    }
 }
 
@@ -286,9 +293,9 @@ static void gfx_widget_screenshot_iterate(
 {
    settings_t *settings = config_get_ptr();
    dispgfx_widget_t *p_dispwidget       = (dispgfx_widget_t*)user_data;
-   gfx_widget_screenshot_state_t* state = gfx_widget_screenshot_get_ptr();
-   unsigned padding                     = gfx_widgets_get_padding(p_dispwidget);
-   gfx_widget_font_data_t* font_regular = gfx_widgets_get_font_regular(p_dispwidget);
+   gfx_widget_screenshot_state_t *state = &p_w_screenshot_st;
+   unsigned padding                     = p_dispwidget->simple_widget_padding;
+   gfx_widget_font_data_t* font_regular = &p_dispwidget->gfx_widget_fonts.regular;
 
    /* Load screenshot and start its animation */
    if (state->filename[0] != '\0')
@@ -339,7 +346,7 @@ static void gfx_widget_screenshot_iterate(
 
       timer.userdata = p_dispwidget;
 
-      gfx_timer_start(&state->timer, &timer);
+      gfx_animation_timer_start(&state->timer, &timer);
 
       state->loaded       = true;
       state->filename[0]  = '\0';

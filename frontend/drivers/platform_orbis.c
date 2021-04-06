@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
    return rarch_main(argc, argv, NULL);
 }
 
-static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
+static void frontend_orbis_get_env(int *argc, char *argv[],
       void *args, void *params_data)
 {
    unsigned i;
@@ -129,9 +129,9 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
    orbisPadInitWithConf(myConf->confPad);
    scePadClose(myConf->confPad->padHandle);
 
-   strlcpy(eboot_path, "host0:app", sizeof(eboot_path));
+   strcpy_literal(eboot_path, "host0:app");
    strlcpy(g_defaults.dirs[DEFAULT_DIR_PORT], eboot_path, sizeof(g_defaults.dirs[DEFAULT_DIR_PORT]));
-   strlcpy(user_path, "host0:app/data/retroarch/", sizeof(user_path));
+   strcpy_literal(user_path, "host0:app/data/retroarch/");
 
    RARCH_LOG("port dir: [%s]\n", g_defaults.dirs[DEFAULT_DIR_PORT]);
 
@@ -177,8 +177,8 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
          "logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
    strlcpy(g_defaults.dirs[DEFAULT_DIR_CONTENT_HISTORY],
          user_path, sizeof(g_defaults.dirs[DEFAULT_DIR_CONTENT_HISTORY]));
-   fill_pathname_join(g_defaults.path.config, user_path,
-         file_path_str(FILE_PATH_MAIN_CONFIG), sizeof(g_defaults.path.config));
+   fill_pathname_join(g_defaults.path_config, user_path,
+         FILE_PATH_MAIN_CONFIG, sizeof(g_defaults.path_config));
 
 #ifndef IS_SALAMANDER
    params          = (struct rarch_main_wrap*)params_data;
@@ -210,14 +210,9 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
          RARCH_LOG("Auto-start game %s.\n", argv[2]);
       }
    }
-#endif
 
-   for (i = 0; i < DEFAULT_DIR_LAST; i++)
-   {
-      const char *dir_path = g_defaults.dirs[i];
-      if (!string_is_empty(dir_path))
-         path_mkdir(dir_path);
-   }
+   dir_check_defaults("host0:app/custom.ini");
+#endif
 }
 
 static void frontend_orbis_deinit(void *data)
@@ -318,7 +313,7 @@ static int frontend_orbis_get_rating(void)
    return 6; /* Go with a conservative figure for now. */
 }
 
-enum frontend_architecture frontend_orbis_get_architecture(void)
+enum frontend_architecture frontend_orbis_get_arch(void)
 {
    return FRONTEND_ARCH_X86_64;
 }
@@ -342,7 +337,7 @@ static int frontend_orbis_parse_drive_list(void *data, bool load_content)
 }
 
 frontend_ctx_driver_t frontend_ctx_orbis = {
-   frontend_orbis_get_environment_settings,
+   frontend_orbis_get_env,
    frontend_orbis_init,
    frontend_orbis_deinit,
    frontend_orbis_exitspawn,
@@ -357,18 +352,20 @@ frontend_ctx_driver_t frontend_ctx_orbis = {
    NULL,                         /* get_name */
    NULL,                         /* get_os */
    frontend_orbis_get_rating,
-   NULL,                         /* load_content */
-   frontend_orbis_get_architecture,
+   NULL,                         /* content_loaded */
+   frontend_orbis_get_arch,
    NULL,
    frontend_orbis_parse_drive_list,
-   NULL,                         /* get_mem_total */
-   NULL,                         /* get_mem_free */
+   NULL,                         /* get_total_mem */
+   NULL,                         /* get_free_mem */
    NULL,                         /* install_signal_handler */
    NULL,                         /* get_sighandler_state */
    NULL,                         /* set_sighandler_state */
    NULL,                         /* destroy_sighandler_state */
    NULL,                         /* attach_console */
    NULL,                         /* detach_console */
+   NULL,                         /* get_lakka_version */
+   NULL,                         /* set_screen_brightness */
    NULL,                         /* watch_path_for_changes */
    NULL,                         /* check_for_path_changes */
    NULL,                         /* set_sustained_performance_mode */
@@ -376,5 +373,6 @@ frontend_ctx_driver_t frontend_ctx_orbis = {
    NULL,                         /* get_user_language */
    NULL,                         /* is_narrator_running */
    NULL,                         /* accessibility_speak */
-   "orbis",
+   "orbis",                      /* ident */
+   NULL                          /* get_video_driver */
 };

@@ -33,9 +33,9 @@
 
 struct rxml_parse_buffer
 {
+   rxml_node_t *stack[32];
    char xml[BUFSIZE];
    char val[BUFSIZE];
-   rxml_node_t* stack[32];
 };
 
 struct rxml_document
@@ -143,16 +143,6 @@ rxml_document_t *rxml_load_document_string(const char *str)
    if (!doc)
       goto error;
 
-   doc->root_node                = (struct rxml_node *)malloc(
-         sizeof(*doc->root_node));
-   
-   doc->root_node->name          = NULL;
-   doc->root_node->data          = NULL;
-   doc->root_node->attrib        = NULL;
-
-   doc->root_node->children      = NULL;
-   doc->root_node->next          = NULL;
-
    yxml_init(&x, buf->xml, BUFSIZE);
 
    for (; *str; ++str)
@@ -256,36 +246,20 @@ rxml_document_t *rxml_load_document_string(const char *str)
 
          case YXML_ATTRSTART:
             if (attr)
-            {
-               struct rxml_attrib_node 
-                  *new_node = (struct rxml_attrib_node*)
-                  calloc(1, sizeof(*attr));
-               attr         = new_node;
-               attr->next   = new_node ;
-            }
+               attr = attr->next   = (struct rxml_attrib_node*)
+                     calloc(1, sizeof(*attr));
             else
-            {
-               struct rxml_attrib_node 
-                  *new_node    = (struct rxml_attrib_node*)
-                  calloc(1, sizeof(*attr));
-               attr            = new_node;
-               
-               if (node)
-                  node->attrib = new_node;
-            }
+               attr = node->attrib = (struct rxml_attrib_node*)calloc(1, sizeof(*attr));
 
-            if (attr)
-            {
-               if (attr->attrib)
-                  free(attr->attrib);
-               attr->attrib = strdup(x.attr);
-            }
+            if (attr->attrib)
+               free(attr->attrib);
+            attr->attrib = strdup(x.attr);
 
             valptr       = buf->val;
             break;
 
          case YXML_ATTRVAL:
-            for(c = 0; c < sizeof(x.data) && x.data[c]; ++c)
+            for (c = 0; c < sizeof(x.data) && x.data[c]; ++c)
             {
                *valptr = x.data[c];
                ++valptr;

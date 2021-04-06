@@ -124,19 +124,21 @@ static int GLXExtensionSupported(Display *dpy, const char *extension)
    const char *extensionsString  = glXQueryExtensionsString(dpy, DefaultScreen(dpy));
    const char *client_extensions = glXGetClientString(dpy, GLX_EXTENSIONS);
    const char *pos               = strstr(extensionsString, extension);
+   size_t pos_ext_len            = strlen(extension);
 
    if (  pos &&
          (pos == extensionsString || pos[-1] == ' ') &&
-         (pos[strlen(extension)] == ' ' || pos[strlen(extension)] == '\0')
+         (pos[pos_ext_len] == ' ' || pos[pos_ext_len] == '\0')
       )
       return 1;
 
-   pos = strstr(client_extensions, extension);
+   pos                           = strstr(client_extensions, extension);
+   pos_ext_len                   = strlen(extension);
 
    if (
          pos &&
          (pos == extensionsString || pos[-1] == ' ') &&
-         (pos[strlen(extension)] == ' ' || pos[strlen(extension)] == '\0')
+         (pos[pos_ext_len] == ' ' || pos[pos_ext_len] == '\0')
       )
       return 1;
 
@@ -927,7 +929,7 @@ static void gfx_ctx_x_input_driver(void *data,
 
    if (string_is_equal(input_driver, "udev"))
    {
-      *input_data = input_udev.init(joypad_name);
+      *input_data = input_driver_init_wrap(&input_udev, joypad_name);
       if (*input_data)
       {
          *input = &input_udev;
@@ -936,7 +938,7 @@ static void gfx_ctx_x_input_driver(void *data,
    }
 #endif
 
-   x_input      = input_x.init(joypad_name);
+   x_input      = input_driver_init_wrap(&input_x, joypad_name);
    *input       = x_input ? &input_x : NULL;
    *input_data  = x_input;
 }

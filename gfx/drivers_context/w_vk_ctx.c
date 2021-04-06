@@ -216,7 +216,14 @@ static void *gfx_ctx_w_vk_init(void *video_driver)
    win32_window_reset();
    win32_monitor_init();
 
-   wndclass.lpfnWndProc   = WndProcVK;
+   {
+      settings_t *settings     = config_get_ptr();
+      wndclass.lpfnWndProc     = wnd_proc_vk_common;
+#ifdef HAVE_DINPUT
+      if (string_is_equal(settings->arrays.input_driver, "dinput"))
+         wndclass.lpfnWndProc   = wnd_proc_vk_dinput;
+#endif
+   }
    if (!win32_window_init(&wndclass, true, NULL))
       goto error;
 
@@ -242,6 +249,10 @@ static bool gfx_ctx_w_vk_set_video_mode(void *data,
       RARCH_ERR("[WGL]: win32_set_video_mode failed.\n");
       goto error;
    }
+   else
+      /* This is required for fullscreen mailbox
+       * not to crash after refresh rate change */
+      vulkan_create_swapchain(&win32_vk, width, height, win32_vk_interval);
 
    gfx_ctx_w_vk_swap_interval(data, win32_vk_interval);
    return true;
@@ -264,10 +275,10 @@ static void gfx_ctx_w_vk_input_driver(void *data,
    /* winraw only available since XP */
    if (string_is_equal(input_driver, "raw"))
    {
-      *input_data = input_winraw.init(joypad_name);
+      *input_data = input_driver_init_wrap(&input_winraw, joypad_name);
       if (*input_data)
       {
-         *input     = &input_winraw;
+         *input        = &input_winraw;
          dinput_vk_wgl = NULL;
          return;
       }
@@ -276,7 +287,7 @@ static void gfx_ctx_w_vk_input_driver(void *data,
 #endif
 
 #ifdef HAVE_DINPUT
-   dinput_vk_wgl  = input_dinput.init(joypad_name);
+   dinput_vk_wgl  = input_driver_init_wrap(&input_dinput, joypad_name);
    *input         = dinput_vk_wgl ? &input_dinput : NULL;
    *input_data    = dinput_vk_wgl;
 #endif

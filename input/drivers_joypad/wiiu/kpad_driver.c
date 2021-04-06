@@ -55,7 +55,7 @@ static int to_wiimote_channel(unsigned pad)
 {
    unsigned i;
 
-   for(i = 0; i < WIIU_WIIMOTE_CHANNELS; i++)
+   for (i = 0; i < WIIU_WIIMOTE_CHANNELS; i++)
       if (channel_slot_map[i] == pad)
          return i;
 
@@ -74,12 +74,12 @@ static int get_slot_for_channel(unsigned channel)
    return slot;
 }
 
-static bool kpad_init(void *data)
+static void *kpad_init(void *data)
 {
    kpad_poll();
    kpad_ready = true;
 
-   return true;
+   return (void*)-1;
 }
 
 static bool kpad_query_pad(unsigned pad)

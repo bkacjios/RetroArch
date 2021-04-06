@@ -20,6 +20,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifdef HAVE_CONFIG_H
+#include "../../config.h"
+#endif
+
 #include <audio/audio_mixer.h>
 #include <audio/audio_resampler.h>
 
@@ -32,10 +36,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
-#ifdef HAVE_CONFIG_H
-#include "../../config.h"
-#endif
 
 #ifdef HAVE_STB_VORBIS
 #define STB_VORBIS_NO_PUSHDATA_API
@@ -73,16 +73,16 @@ struct audio_mixer_sound
       struct
       {
          /* wav */
-         unsigned frames;
          const float* pcm;
+         unsigned frames;
       } wav;
 
 #ifdef HAVE_STB_VORBIS
       struct
       {
          /* ogg */
-         unsigned size;
          const void* data;
+         unsigned size;
       } ogg;
 #endif
 
@@ -90,8 +90,8 @@ struct audio_mixer_sound
       struct
       {
           /* flac */
-         unsigned size;
          const void* data;
+         unsigned size;
       } flac;
 #endif
 
@@ -99,8 +99,8 @@ struct audio_mixer_sound
       struct
       {
           /* mp */
-         unsigned size;
          const void* data;
+         unsigned size;
       } mp3;
 #endif
 
@@ -108,8 +108,8 @@ struct audio_mixer_sound
       struct
       {
          /* mod/s3m/xm */
-         unsigned size;
          const void* data;
+         unsigned size;
       } mod;
 #endif
    } types;
@@ -117,12 +117,6 @@ struct audio_mixer_sound
 
 struct audio_mixer_voice
 {
-   bool     repeat;
-   unsigned type;
-   float    volume;
-   audio_mixer_sound_t *sound;
-   audio_mixer_stop_cb_t stop_cb;
-
    union
    {
       struct
@@ -133,61 +127,67 @@ struct audio_mixer_voice
 #ifdef HAVE_STB_VORBIS
       struct
       {
-         unsigned    position;
-         unsigned    samples;
-         unsigned    buf_samples;
-         float*      buffer;
-         float       ratio;
          stb_vorbis *stream;
          void       *resampler_data;
          const retro_resampler_t *resampler;
+         float      *buffer;
+         unsigned    position;
+         unsigned    samples;
+         unsigned    buf_samples;
+         float       ratio;
       } ogg;
 #endif
 
 #ifdef HAVE_DR_FLAC
       struct
       {
-         unsigned    position;
-         unsigned    samples;
-         unsigned    buf_samples;
          float*      buffer;
-         float       ratio;
          drflac      *stream;
          void        *resampler_data;
          const retro_resampler_t *resampler;
+         unsigned    position;
+         unsigned    samples;
+         unsigned    buf_samples;
+         float       ratio;
       } flac;
 #endif
 
 #ifdef HAVE_DR_MP3
       struct
       {
-         unsigned    position;
-         unsigned    samples;
-         unsigned    buf_samples;
-         float*      buffer;
-         float       ratio;
          drmp3       stream;
          void        *resampler_data;
          const retro_resampler_t *resampler;
+         float*      buffer;
+         unsigned    position;
+         unsigned    samples;
+         unsigned    buf_samples;
+         float       ratio;
       } mp3;
 #endif
 
 #ifdef HAVE_IBXM
       struct
       {
-         unsigned          position;
-         unsigned          samples;
-         unsigned          buf_samples;
          int*              buffer;
          struct replay*    stream;
          struct module*    module;
+         unsigned          position;
+         unsigned          samples;
+         unsigned          buf_samples;
       } mod;
 #endif
    } types;
+   audio_mixer_sound_t *sound;
+   audio_mixer_stop_cb_t stop_cb;
+   unsigned type;
+   float    volume;
+   bool     repeat;
+
 };
 
 /* TODO/FIXME - static globals */
-static struct audio_mixer_voice s_voices[AUDIO_MIXER_MAX_VOICES] = {{0}};
+static struct audio_mixer_voice s_voices[AUDIO_MIXER_MAX_VOICES] = {0};
 static unsigned s_rate = 0;
 
 #ifdef HAVE_RWAV
@@ -991,18 +991,15 @@ static void audio_mixer_mix_mod(float* buffer, size_t num_frames,
 {
    int i;
    float samplef                    = 0.0f;
-   int samplei                      = 0;
    unsigned temp_samples            = 0;
    unsigned buf_free                = (unsigned)(num_frames * 2);
    int* pcm                         = NULL;
 
-   if (voice->types.mod.position == voice->types.mod.samples)
+   if (voice->types.mod.samples == 0)
    {
 again:
       temp_samples = replay_get_audio(
-            voice->types.mod.stream, voice->types.mod.buffer );
-
-      temp_samples *= 2; /* stereo */
+            voice->types.mod.stream, voice->types.mod.buffer, 0 ) * 2;
 
       if (temp_samples == 0)
       {
@@ -1031,10 +1028,9 @@ again:
    {
       for (i = voice->types.mod.samples; i != 0; i--)
       {
-         samplei     = *pcm++ * volume;
-         samplef     = (float)((int)samplei + 32768) / 65535.0f;
+         samplef     = ((float)(*pcm++) + 32768.0f) / 65535.0f;
          samplef     = samplef * 2.0f - 1.0f;
-         *buffer++  += samplef;
+         *buffer++  += samplef * volume;
       }
 
       buf_free -= voice->types.mod.samples;
@@ -1043,10 +1039,9 @@ again:
 
    for (i = buf_free; i != 0; --i )
    {
-      samplei     = *pcm++ * volume;
-      samplef     = (float)((int)samplei + 32768) / 65535.0f;
+      samplef     = ((float)(*pcm++) + 32768.0f) / 65535.0f;
       samplef     = samplef * 2.0f - 1.0f;
-      *buffer++  += samplef;
+      *buffer++  += samplef * volume;
    }
 
    voice->types.mod.position += buf_free;

@@ -22,7 +22,7 @@
 #include <retro_assert.h>
 #include <retro_miscellaneous.h>
 #include <lists/string_list.h>
-#include <rhash.h>
+#include <lrc_hash.h>
 #include <string/stdstring.h>
 #include <file/file_path.h>
 #include <lists/dir_list.h>
@@ -41,18 +41,18 @@
 
 typedef struct
 {
-   char content_crc[PATH_MAX_LENGTH];
-   char content_path[PATH_MAX_LENGTH];
+   struct string_list *lpl_list;
+   playlist_config_t playlist_config; /* size_t alignment */
    char hostname[512];
    char subsystem_name[512];
+   char content_crc[PATH_MAX_LENGTH];
+   char content_path[PATH_MAX_LENGTH];
    char core_name[PATH_MAX_LENGTH];
    char core_path[PATH_MAX_LENGTH];
    char core_extensions[PATH_MAX_LENGTH];
    bool found;
    bool current;
    bool contentless;
-   struct string_list *lpl_list;
-   playlist_config_t playlist_config;
 } netplay_crc_handle_t;
 
 static void netplay_crc_scan_callback(retro_task_t *task,
@@ -247,7 +247,7 @@ static void task_netplay_crc_scan_handler(retro_task_t *task)
       if (string_is_equal(current, state->content_crc))
       {
          RARCH_LOG("[Lobby]: CRC match %s with currently loaded content\n", current);
-         strlcpy(state->content_path, "N/A", sizeof(state->content_path));
+         strcpy_literal(state->content_path, "N/A");
          state->found   = true;
          state->current = true;
          task_set_data(task, state);

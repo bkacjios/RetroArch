@@ -169,7 +169,7 @@ static void gfx_ctx_khr_display_input_driver(void *data,
 #ifdef HAVE_UDEV
       {
          /* Try to set it to udev instead */
-         void *udev = input_udev.init(joypad_name);
+         void *udev = input_driver_init_wrap(&input_udev, joypad_name);
          if (udev)
          {
             *input       = &input_udev;
@@ -181,7 +181,7 @@ static void gfx_ctx_khr_display_input_driver(void *data,
 #if defined(__linux__) && !defined(ANDROID)
       {
          /* Try to set it to linuxraw instead */
-         void *linuxraw = input_linuxraw.init(joypad_name);
+         void *linuxraw = input_driver_init_wrap(&input_linuxraw, joypad_name);
          if (linuxraw)
          {
             *input       = &input_linuxraw;
@@ -235,7 +235,9 @@ static void gfx_ctx_khr_display_swap_buffers(void *data)
    {
       khr->vk.context.has_acquired_swapchain = false;
       if (khr->vk.swapchain == VK_NULL_HANDLE)
+      {
          retro_sleep(10);
+      }
       else
          vulkan_present(&khr->vk, khr->vk.context.current_swapchain_index);
    }

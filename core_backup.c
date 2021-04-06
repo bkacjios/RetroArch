@@ -34,9 +34,9 @@
 /* Holds all entries in a core backup list */
 struct core_backup_list
 {
+   core_backup_list_entry_t *entries;
    size_t size;
    size_t capacity;
-   core_backup_list_entry_t *entries;
 };
 
 /*********************/
@@ -163,11 +163,12 @@ bool core_backup_get_backup_path(
          (unsigned)time_info.tm_sec,
          crc,
          (unsigned)backup_mode,
-         file_path_str(FILE_PATH_CORE_BACKUP_EXTENSION));
+         FILE_PATH_CORE_BACKUP_EXTENSION);
 
    if ((n < 0) || (n >= 128))
       n = 0; /* Silence GCC warnings... */
 
+   (void)n;
    /* Build final path */
    fill_pathname_join(backup_path, backup_dir,
          backup_filename, len);
@@ -199,7 +200,7 @@ enum core_backup_type core_backup_get_backup_type(const char *backup_path)
 
    /* Check if this is an archived backup */
    if (string_is_equal_noncase(backup_ext,
-         file_path_str(FILE_PATH_CORE_BACKUP_EXTENSION_NO_DOT)))
+         FILE_PATH_CORE_BACKUP_EXTENSION_NO_DOT))
    {
       const char *backup_filename = NULL;
       const char *src_ext         = NULL;
@@ -516,7 +517,7 @@ core_backup_list_t *core_backup_list_init(
    /* Get backup file list */
    dir_list = dir_list_new(
          backup_dir,
-         file_path_str(FILE_PATH_CORE_BACKUP_EXTENSION),
+         FILE_PATH_CORE_BACKUP_EXTENSION,
          false, /* include_dirs */
          false, /* include_hidden */
          false, /* include_compressed */
@@ -742,7 +743,7 @@ bool core_backup_list_get_entry_timestamp_str(
 
    if ((n < 0) || (n >= 32))
       n = 0; /* Silence GCC warnings... */
-
+   (void)n;
    return true;
 }
 
@@ -762,6 +763,6 @@ bool core_backup_list_get_entry_crc_str(
 
    if ((n < 0) || (n >= 32))
       n = 0; /* Silence GCC warnings... */
-
+   (void)n;
    return true;
 }

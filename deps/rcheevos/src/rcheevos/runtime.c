@@ -172,6 +172,7 @@ int rc_runtime_activate_achievement(rc_runtime_t* self, unsigned id, const char*
   self->triggers[self->trigger_count].id = id;
   self->triggers[self->trigger_count].trigger = trigger;
   self->triggers[self->trigger_count].buffer = trigger_buffer;
+  self->triggers[self->trigger_count].serialized_size = 0;
   memcpy(self->triggers[self->trigger_count].md5, md5, 16);
   self->triggers[self->trigger_count].owns_memrefs = owns_memref;
   ++self->trigger_count;
@@ -442,13 +443,13 @@ const char* rc_runtime_get_richpresence(const rc_runtime_t* self)
 
 void rc_runtime_do_frame(rc_runtime_t* self, rc_runtime_event_handler_t event_handler, rc_peek_t peek, void* ud, lua_State* L) {
   rc_runtime_event_t runtime_event;
-  unsigned i;
+  int i;
 
   runtime_event.value = 0;
 
   rc_update_memref_values(self->memrefs, peek, ud);
 
-  for (i = 0; i < self->trigger_count; ++i) {
+  for (i = self->trigger_count - 1; i >= 0; --i) {
     rc_trigger_t* trigger = self->triggers[i].trigger;
     int trigger_state;
 
@@ -497,7 +498,7 @@ void rc_runtime_do_frame(rc_runtime_t* self, rc_runtime_event_handler_t event_ha
     }
   }
 
-  for (i = 0; i < self->lboard_count; ++i) {
+  for (i = self->lboard_count - 1; i >= 0; --i) {
     rc_lboard_t* lboard = self->lboards[i].lboard;
     int lboard_state;
 

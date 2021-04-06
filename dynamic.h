@@ -55,6 +55,7 @@ const struct retro_controller_description *
 
 struct retro_core_t
 {
+   uint64_t serialization_quirks_v;
    void (*retro_init)(void);
    void (*retro_deinit)(void);
    unsigned (*retro_api_version)(void);
@@ -89,7 +90,6 @@ struct retro_core_t
    bool input_polled;
    bool has_set_subsystems;
    bool has_set_input_descriptors;
-   uint64_t serialization_quirks_v;
 };
 
 bool libretro_get_shared_context(void);
@@ -99,6 +99,7 @@ bool libretro_get_shared_context(void);
 /* Arbitrary 10 roms for each subsystem limit */
 #define SUBSYSTEM_MAX_SUBSYSTEM_ROMS 10
 
+/* TODO/FIXME - globals */
 extern struct retro_subsystem_info subsystem_data[SUBSYSTEM_MAX_SUBSYSTEMS];
 extern unsigned subsystem_current_count;
 

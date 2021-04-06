@@ -417,7 +417,7 @@ error:
 }
 #endif
 
-void create_graphics_context(HWND hwnd, bool *quit)
+void create_wgl_context(HWND hwnd, bool *quit)
 {
    switch (win32_api)
    {
@@ -631,7 +631,14 @@ static void *gfx_ctx_wgl_init(void *video_driver)
    win32_window_reset();
    win32_monitor_init();
 
-   wndclass.lpfnWndProc   = WndProcWGL;
+   {
+      settings_t *settings     = config_get_ptr();
+      wndclass.lpfnWndProc   = wnd_proc_wgl_common;
+#ifdef HAVE_DINPUT
+      if (string_is_equal(settings->arrays.input_driver, "dinput"))
+         wndclass.lpfnWndProc   = wnd_proc_wgl_dinput;
+#endif
+   }
 
    if (!win32_window_init(&wndclass, true, NULL))
       goto error;
@@ -685,7 +692,7 @@ static void gfx_ctx_wgl_input_driver(void *data,
    /* winraw only available since XP */
    if (string_is_equal(input_driver, "raw"))
    {
-      *input_data = input_winraw.init(joypad_name);
+      *input_data = input_driver_init_wrap(&input_winraw, joypad_name);
       if (*input_data)
       {
          *input     = &input_winraw;
@@ -697,7 +704,7 @@ static void gfx_ctx_wgl_input_driver(void *data,
 #endif
 
 #ifdef HAVE_DINPUT
-   dinput_wgl  = input_dinput.init(joypad_name);
+   dinput_wgl  = input_driver_init_wrap(&input_dinput, joypad_name);
    *input      = dinput_wgl ? &input_dinput : NULL;
    *input_data = dinput_wgl;
 #endif

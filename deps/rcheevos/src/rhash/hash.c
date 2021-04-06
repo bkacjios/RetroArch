@@ -1,8 +1,7 @@
 #ifdef RARCH_INTERNAL
- /* explicit path to avoid conflict with libretro-common/include/rhash.h */
- #include "../../include/rhash.h"
+ #include "../../include/rc_hash.h"
 #else
- #include "rhash.h"
+ #include "rc_hash.h"
 #endif
 
 #include "../rcheevos/compat.h"
@@ -1218,7 +1217,7 @@ static const char* rc_hash_get_first_item_from_playlist(const char* path)
 
   rc_file_close(file_handle);
 
-  ptr = start = buffer;
+  ptr = buffer;
   do
   {
     /* ignore empty and commented lines */

@@ -19,6 +19,7 @@
 #include <file/file_path.h>
 #include <streams/file_stream.h>
 #include <retro_miscellaneous.h>
+#include <string/stdstring.h>
 
 #include "../font_driver.h"
 #include "../../verbosity.h"
@@ -36,9 +37,9 @@
 
 typedef struct
 {
-   struct font_line_metrics line_metrics;
-   struct font_atlas atlas;
-   struct font_glyph glyphs[256];
+   struct font_atlas atlas;               /* ptr   alignment */
+   struct font_glyph glyphs[256];         /* unsigned alignment */
+   struct font_line_metrics line_metrics; /* float alignment */
 } stb_font_renderer_t;
 
 static struct font_atlas *font_renderer_stb_get_atlas(void *data)
@@ -108,7 +109,7 @@ static bool font_renderer_stb_create_atlas(stb_font_renderer_t *self,
       g->height            = c->y1 - c->y0;
 
       /* Make sure important characters fit */
-      if (isalnum(i) && (!g->width || !g->height))
+      if (ISALNUM(i) && (!g->width || !g->height))
       {
          int new_width  = width  * 1.2;
          int new_height = height * 1.2;

@@ -42,8 +42,8 @@
  * an image load */
 typedef struct
 {
-   gfx_thumbnail_t *thumbnail;
    uint64_t list_id;
+   gfx_thumbnail_t *thumbnail;
 } gfx_thumbnail_tag_t;
 
 /* Setters */
@@ -80,33 +80,6 @@ void gfx_thumbnail_set_fade_missing(bool fade_missing)
    gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
 
    p_gfx_thumb->fade_missing = fade_missing;
-}
-
-/* Getters */
-
-/* Fetches current streaming thumbnails request delay */
-float gfx_thumbnail_get_stream_delay(void)
-{
-   gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
-
-   return p_gfx_thumb->stream_delay;
-}
-
-/* Fetches current 'fade in' animation duration */
-float gfx_thumbnail_get_fade_duration(void)
-{
-   gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
-
-   return p_gfx_thumb->fade_duration;
-}
-
-/* Fetches current enable state for missing
- * thumbnail 'fade in' animations */
-bool gfx_thumbnail_get_fade_missing(bool fade_missing)
-{
-   gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
-
-   return p_gfx_thumb->fade_missing;
 }
 
 /* Callbacks */
@@ -201,15 +174,13 @@ static void gfx_thumbnail_handle_upload(
    fade_enabled = true;
 
    /* Check we have a valid image */
-   if (!img)
-      goto end;
-
-   if ((img->width < 1) || (img->height < 1))
+   if (!img || (img->width < 1) || (img->height < 1))
       goto end;
 
    /* Upload texture to GPU */
    if (!video_driver_texture_load(
-            img, TEXTURE_FILTER_MIPMAP_LINEAR, &thumbnail_tag->thumbnail->texture))
+            img, TEXTURE_FILTER_MIPMAP_LINEAR,
+            &thumbnail_tag->thumbnail->texture))
       goto end;
 
    /* Cache dimensions */
@@ -475,10 +446,11 @@ void gfx_thumbnail_process_stream(
        *   GFX_THUMBNAIL_STATUS_UNKNOWN */
       if (thumbnail->status == GFX_THUMBNAIL_STATUS_UNKNOWN)
       {
-         gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
+         gfx_animation_t *p_anim             = anim_get_ptr();
+         gfx_thumbnail_state_t *p_gfx_thumb  = gfx_thumb_get_ptr();
 
          /* Check if stream delay timer has elapsed */
-         thumbnail->delay_timer += gfx_animation_get_delta_time();
+         thumbnail->delay_timer             += p_anim->delta_time;
 
          if (thumbnail->delay_timer > p_gfx_thumb->stream_delay)
          {
@@ -554,7 +526,8 @@ void gfx_thumbnail_process_streams(
       {
          /* Check if stream delay timer has elapsed */
          gfx_thumbnail_state_t *p_gfx_thumb = gfx_thumb_get_ptr();
-         float delta_time                   = gfx_animation_get_delta_time();
+         gfx_animation_t *p_anim            = anim_get_ptr();
+         float delta_time                   = p_anim->delta_time;
          bool request_right                 = false;
          bool request_left                  = false;
 
@@ -683,7 +656,6 @@ void gfx_thumbnail_get_draw_dimensions(
 error:
    *draw_width  = 0.0f;
    *draw_height = 0.0f;
-   return;
 }
 
 /* Draws specified thumbnail with specified alignment
@@ -706,9 +678,13 @@ void gfx_thumbnail_draw(
       float alpha, float scale_factor,
       gfx_thumbnail_shadow_t *shadow)
 {
+   gfx_display_t            *p_disp  = disp_get_ptr();
+   gfx_display_ctx_driver_t *dispctx = p_disp->dispctx;
    /* Sanity check */
    if (!thumbnail ||
        (width < 1) || (height < 1) || (alpha <= 0.0f) || (scale_factor <= 0.0f))
+      return;
+   if (!dispctx)
       return;
 
    /* Only draw thumbnail if it is available... */
@@ -733,7 +709,7 @@ void gfx_thumbnail_draw(
       /* Set thumbnail opacity */
       if (thumbnail_alpha <= 0.0f)
          return;
-      else if (thumbnail_alpha < 1.0f)
+      if (thumbnail_alpha < 1.0f)
          gfx_display_set_alpha(thumbnail_color, thumbnail_alpha);
 
       /* Get thumbnail dimensions */
@@ -741,7 +717,8 @@ void gfx_thumbnail_draw(
             thumbnail, width, height, scale_factor,
             &draw_width, &draw_height);
 
-      gfx_display_blend_begin(userdata);
+      if (dispctx->blend_begin)
+         dispctx->blend_begin(userdata);
 
       /* Perform 'rotation' step
        * > Note that rotation does not actually work...
@@ -761,7 +738,7 @@ void gfx_thumbnail_draw(
       rotate_draw.scale_z      = 1.0f;
       rotate_draw.scale_enable = false;
 
-      gfx_display_rotate_z(&rotate_draw, userdata);
+      gfx_display_rotate_z(p_disp, &rotate_draw, userdata);
 
       /* Configure draw object
        * > Note: Colour, width/height and position must
@@ -777,7 +754,7 @@ void gfx_thumbnail_draw(
       draw.matrix_data     = &mymat;
       draw.texture         = thumbnail->texture;
       draw.prim_type       = GFX_DISPLAY_PRIM_TRIANGLESTRIP;
-      draw.pipeline.id     = 0;
+      draw.pipeline_id     = 0;
 
       /* Set thumbnail alignment within bounding box */
       switch (alignment)
@@ -819,7 +796,7 @@ void gfx_thumbnail_draw(
       {
          /* Sanity check */
          if ((shadow->type != GFX_THUMBNAIL_SHADOW_NONE) &&
-             (shadow->alpha > 0.0f))
+               (shadow->alpha > 0.0f))
          {
             float shadow_width;
             float shadow_height;
@@ -866,8 +843,9 @@ void gfx_thumbnail_draw(
             draw.y       = shadow_y;
 
             /* Draw shadow */
-            gfx_display_draw(&draw, userdata,
-                  video_width, video_height);
+            if (draw.height > 0 && draw.width > 0)
+               if (dispctx->draw)
+                  dispctx->draw(&draw, userdata, video_width, video_height);
          }
       }
 
@@ -879,8 +857,11 @@ void gfx_thumbnail_draw(
       draw.y       = draw_y;
 
       /* Draw thumbnail */
-      gfx_display_draw(&draw, userdata,
-            video_width, video_height);
-      gfx_display_blend_end(userdata);
+      if (draw.height > 0 && draw.width > 0)
+         if (dispctx->draw)
+            dispctx->draw(&draw, userdata, video_width, video_height);
+
+      if (dispctx->blend_end)
+         dispctx->blend_end(userdata);
    }
 }

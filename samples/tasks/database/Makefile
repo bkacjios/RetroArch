@@ -94,7 +94,6 @@ SOURCES_C := \
 	$(CORE_DIR)/tasks/task_database_cue.c \
 	$(CORE_DIR)/database_info.c \
 	$(CORE_DIR)/core_info.c \
-	$(CORE_DIR)/file_path_str.c \
 	$(CORE_DIR)/msg_hash.c \
 	$(CORE_DIR)/intl/msg_hash_us.c \
 	$(CORE_DIR)/playlist.c \
@@ -115,8 +114,7 @@ SOURCES_C := \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strcasestr.c \
 	$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
 	$(LIBRETRO_COMM_DIR)/compat/fopen_utf8.c \
-	$(LIBRETRO_COMM_DIR)/formats/json/jsonsax.c \
-	$(LIBRETRO_COMM_DIR)/formats/json/jsonsax_full.c \
+	$(LIBRETRO_COMM_DIR)/formats/json/rjson.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_crc32.c \
 	$(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \
 	$(LIBRETRO_COMM_DIR)/queues/task_queue.c \

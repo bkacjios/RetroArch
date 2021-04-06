@@ -33,10 +33,10 @@ RETRO_BEGIN_DECLS
 
 typedef struct content_ctx_info
 {
-   int argc;                       /* Argument count. */
    char **argv;                    /* Argument variable list. */
    void *args;                     /* Arguments passed from callee */
    environment_get_t environ_get;  /* Function passed for environment_get function */
+   int argc;                       /* Argument count. */
 } content_ctx_info_t;
 
 /* Load a RAM state from disk to memory. */
@@ -50,6 +50,15 @@ bool content_load_state(const char* path, bool load_to_backup_buffer, bool autol
 
 /* Save a state from memory to disk. */
 bool content_save_state(const char *path, bool save_to_disk, bool autosave);
+
+/* Gets the number of bytes required to serialize the state. */
+size_t content_get_serialized_size(void);
+
+/* Serializes the current state. buffer must be at least content_get_serialized_size bytes */
+bool content_serialize_state(void* buffer, size_t buffer_size);
+
+/* Deserializes the current state. */
+bool content_deserialize_state(const void* serialized_data, size_t serialized_size);
 
 /* Waits for any in-progress save state tasks to finish */
 void content_wait_for_save_state_task(void);

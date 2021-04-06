@@ -50,17 +50,16 @@ enum menu_dialog_type
 
 struct menu_dialog
 {
-   bool                  pending_push;
    unsigned              current_id;
    enum menu_dialog_type current_type;
+   bool                  pending_push;
 };
 
 typedef struct menu_dialog menu_dialog_t;
 
 RETRO_BEGIN_DECLS
 
-bool menu_dialog_push_pending(
-      bool push, enum menu_dialog_type type);
+void menu_dialog_push_pending(enum menu_dialog_type type);
 
 void menu_dialog_unset_pending_push(void);
 

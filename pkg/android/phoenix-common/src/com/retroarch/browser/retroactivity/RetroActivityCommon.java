@@ -1,5 +1,14 @@
 package com.retroarch.browser.retroactivity;
 
+import com.google.android.play.core.splitinstall.SplitInstallManager;
+import com.google.android.play.core.splitinstall.SplitInstallManagerFactory;
+import com.google.android.play.core.splitinstall.SplitInstallRequest;
+import com.google.android.play.core.splitinstall.SplitInstallSessionState;
+import com.google.android.play.core.splitinstall.SplitInstallStateUpdatedListener;
+import com.google.android.play.core.splitinstall.model.SplitInstallSessionStatus;
+import com.google.android.play.core.tasks.OnFailureListener;
+import com.google.android.play.core.tasks.OnSuccessListener;
+import com.retroarch.BuildConfig;
 import com.retroarch.browser.preferences.util.UserPreferences;
 import android.annotation.TargetApi;
 import android.app.NativeActivity;
@@ -10,6 +19,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.media.AudioAttributes;
+import android.os.Bundle;
+import android.system.Os;
 import android.view.InputDevice;
 import android.view.Surface;
 import android.view.WindowManager;
@@ -20,7 +31,12 @@ import android.os.PowerManager;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
-import java.lang.Math;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.Locale;
 
@@ -29,6 +45,10 @@ import java.util.Locale;
  */
 public class RetroActivityCommon extends NativeActivity
 {
+  static {
+    System.loadLibrary("retroarch-activity");
+  }
+
   public static int FRONTEND_POWERSTATE_NONE = 0;
   public static int FRONTEND_POWERSTATE_NO_SOURCE = 1;
   public static int FRONTEND_POWERSTATE_CHARGING = 2;
@@ -40,8 +60,60 @@ public class RetroActivityCommon extends NativeActivity
   public static int FRONTEND_ORIENTATION_270 = 3;
   public static int RETRO_RUMBLE_STRONG = 0;
   public static int RETRO_RUMBLE_WEAK = 1;
+  public static int INSTALL_STATUS_DOWNLOADING = 0;
+  public static int INSTALL_STATUS_INSTALLING = 1;
+  public static int INSTALL_STATUS_INSTALLED = 2;
+  public static int INSTALL_STATUS_FAILED = 3;
   public boolean sustainedPerformanceMode = true;
   public int screenOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+
+  private final SplitInstallStateUpdatedListener listener = new SplitInstallStateUpdatedListener() {
+    @Override
+    public void onStateUpdate(SplitInstallSessionState state) {
+      List<String> moduleNames = state.moduleNames();
+      String[] coreNames = new String[moduleNames.size()];
+
+      for(int i = 0; i < moduleNames.size(); i++) {
+        coreNames[i] = unsanitizeCoreName(moduleNames.get(i));
+      }
+
+      switch(state.status()) {
+        case SplitInstallSessionStatus.DOWNLOADING:
+          coreInstallStatusChanged(coreNames, INSTALL_STATUS_DOWNLOADING, state.bytesDownloaded(), state.totalBytesToDownload());
+          break;
+        case SplitInstallSessionStatus.INSTALLING:
+          coreInstallStatusChanged(coreNames, INSTALL_STATUS_INSTALLING, state.bytesDownloaded(), state.totalBytesToDownload());
+          break;
+        case SplitInstallSessionStatus.INSTALLED:
+          updateSymlinks();
+
+          coreInstallStatusChanged(coreNames, INSTALL_STATUS_INSTALLED, state.bytesDownloaded(), state.totalBytesToDownload());
+          break;
+        case SplitInstallSessionStatus.FAILED:
+          coreInstallStatusChanged(coreNames, INSTALL_STATUS_FAILED, state.bytesDownloaded(), state.totalBytesToDownload());
+          break;
+      }
+    }
+  };
+
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    cleanupSymlinks();
+    updateSymlinks();
+
+    SplitInstallManager manager = SplitInstallManagerFactory.create(this);
+    manager.registerListener(listener);
+
+    super.onCreate(savedInstanceState);
+  }
+
+  @Override
+  protected void onDestroy() {
+    SplitInstallManager manager = SplitInstallManagerFactory.create(this);
+    manager.unregisterListener(listener);
+
+    super.onDestroy();
+  }
 
   public void doVibrate(int id, int effect, int strength, int oneShot)
   {
@@ -296,5 +368,258 @@ public class RetroActivityCommon extends NativeActivity
     edit.apply();
 
     Log.i("RetroActivity", "hasOldOrientation? " + hasOldOrientation + " newOrientation: " + newConfig.orientation + " oldOrientation: " + oldOrientation);
+  }
+
+  /**
+   * Checks if this version of RetroArch is a Play Store build.
+   *
+   * @return true if this is a Play Store build, false otherwise
+   */
+  public boolean isPlayStoreBuild() {
+    Log.i("RetroActivity", "isPlayStoreBuild: " + BuildConfig.PLAY_STORE_BUILD);
+
+    return BuildConfig.PLAY_STORE_BUILD;
+  }
+
+  /**
+   * Gets the list of available cores that can be downloaded as Dynamic Feature Modules.
+   *
+   * @return the list of available cores
+   */
+  public String[] getAvailableCores() {
+    int id = getResources().getIdentifier("module_names_" + Build.CPU_ABI.replace('-', '_'), "array", getPackageName());
+
+    String[] returnVal = getResources().getStringArray(id);
+    Log.i("RetroActivity", "getAvailableCores: " + Arrays.toString(returnVal));
+    return returnVal;
+  }
+
+  /**
+   * Gets the list of cores that are currently installed as Dynamic Feature Modules.
+   *
+   * @return the list of installed cores
+   */
+  public String[] getInstalledCores() {
+    SplitInstallManager manager = SplitInstallManagerFactory.create(this);
+    String[] modules = manager.getInstalledModules().toArray(new String[0]);
+    List<String> cores = new ArrayList<>();
+    List<String> availableCores = Arrays.asList(getAvailableCores());
+
+    SharedPreferences prefs = UserPreferences.getPreferences(this);
+
+    for(int i = 0; i < modules.length; i++) {
+      String coreName = unsanitizeCoreName(modules[i]);
+      if(!prefs.getBoolean("core_deleted_" + coreName, false)
+              && availableCores.contains(coreName)) {
+        cores.add(coreName);
+      }
+    }
+
+    String[] returnVal = cores.toArray(new String[0]);
+    Log.i("RetroActivity", "getInstalledCores: " + Arrays.toString(returnVal));
+    return returnVal;
+  }
+
+  /**
+   * Asks the system to download a core.
+   *
+   * @param coreName Name of the core to install
+   */
+  public void downloadCore(final String coreName) {
+    Log.i("RetroActivity", "downloadCore: " + coreName);
+
+    SharedPreferences prefs = UserPreferences.getPreferences(this);
+    prefs.edit().remove("core_deleted_" + coreName).apply();
+
+    SplitInstallManager manager = SplitInstallManagerFactory.create(this);
+    SplitInstallRequest request = SplitInstallRequest.newBuilder()
+            .addModule(sanitizeCoreName(coreName))
+            .build();
+
+    manager.startInstall(request)
+            .addOnSuccessListener(new OnSuccessListener<Integer>() {
+              @Override
+              public void onSuccess(Integer result) {
+                coreInstallInitiated(coreName, true);
+              }
+            })
+
+            .addOnFailureListener(new OnFailureListener() {
+              @Override
+              public void onFailure(Exception e) {
+                coreInstallInitiated(coreName, false);
+              }
+            });
+  }
+
+  /**
+   * Asks the system to delete a core.
+   *
+   * Note that the actual module deletion will not happen immediately (the OS will delete
+   * it whenever it feels like it), but the symlink will still be immediately removed.
+   *
+   * @param coreName Name of the core to delete
+   */
+  public void deleteCore(String coreName) {
+    Log.i("RetroActivity", "deleteCore: " + coreName);
+
+    String newFilename = getCorePath() + coreName + "_libretro_android.so";
+    new File(newFilename).delete();
+
+    SharedPreferences prefs = UserPreferences.getPreferences(this);
+    prefs.edit().putBoolean("core_deleted_" + coreName, true).apply();
+
+    SplitInstallManager manager = SplitInstallManagerFactory.create(this);
+    manager.deferredUninstall(Collections.singletonList(sanitizeCoreName(coreName)));
+  }
+
+
+
+  /////////////// JNI methods ///////////////
+
+
+
+  /**
+   * Called when a core install is initiated.
+   *
+   * @param coreName Name of the core that the install is initiated for.
+   * @param successful true if success, false if failure
+   */
+  private native void coreInstallInitiated(String coreName, boolean successful);
+
+  /**
+   * Called when the status of a core install has changed.
+   *
+   * @param coreNames Names of all cores that are currently being downloaded.
+   * @param status One of INSTALL_STATUS_DOWNLOADING, INSTALL_STATUS_INSTALLING,
+   *               INSTALL_STATUS_INSTALLED, or INSTALL_STATUS_FAILED
+   * @param bytesDownloaded Number of bytes downloaded.
+   * @param totalBytesToDownload Total number of bytes to download.
+   */
+  private native void coreInstallStatusChanged(String[] coreNames, int status, long bytesDownloaded, long totalBytesToDownload);
+
+
+
+  /////////////// Private methods ///////////////
+
+
+
+  /**
+   * Sanitizes a core name so that it can be used when dealing with
+   * Dynamic Feature Modules. Needed because Gradle modules cannot use
+   * dashes, but we have at least one core name ("mesen-s") that uses them.
+   *
+   * @param coreName Name of the core to sanitize.
+   * @return The sanitized core name.
+   */
+  private String sanitizeCoreName(String coreName) {
+    return "core_" + coreName.replace('-', '_');
+  }
+
+  /**
+   * Unsanitizes a core name from its module name.
+   *
+   * @param coreName Name of the core to unsanitize.
+   * @return The unsanitized core name.
+   */
+  private String unsanitizeCoreName(String coreName) {
+    if(coreName.equals("core_mesen_s")) {
+      return "mesen-s";
+    }
+
+    return coreName.substring(5);
+  }
+
+  /**
+   * Gets the path to the RetroArch cores directory.
+   *
+   * @return The path to the RetroArch cores directory
+   */
+  private String getCorePath() {
+    String path = getApplicationInfo().dataDir + "/cores/";
+    new File(path).mkdirs();
+
+    return path;
+  }
+
+  /**
+   * Cleans up existing symlinks before new ones are created.
+   */
+  private void cleanupSymlinks() {
+    if(Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+
+    File[] files = new File(getCorePath()).listFiles();
+    for(int i = 0; i < files.length; i++) {
+      try {
+        Os.readlink(files[i].getAbsolutePath());
+        files[i].delete();
+      } catch (Exception e) {
+        // File is not a symlink, so don't delete.
+      }
+    }
+  }
+
+  /**
+   * Triggers a symlink update in the known places that Dynamic Feature Modules
+   * are installed to.
+   */
+  private void updateSymlinks() {
+    if(!isPlayStoreBuild()) return;
+
+    traverseFilesystem(getFilesDir());
+    traverseFilesystem(new File(getApplicationInfo().nativeLibraryDir));
+  }
+
+  /**
+   * Traverse the filesystem, looking for native libraries.
+   * Symlinks any libraries it finds to the main RetroArch "cores" folder,
+   * updating any existing symlinks with the correct path to the native libraries.
+   *
+   * This is necessary because Dynamic Feature Modules are first downloaded
+   * and installed to a temporary location on disk, before being moved
+   * to a more permanent location by the system at a later point.
+   *
+   * This could probably be done in native code instead, if that's preferred.
+   *
+   * @param file The parent directory of the tree to traverse.
+   * @param cores List of cores to update.
+   * @param filenames List of filenames to update.
+   */
+  private void traverseFilesystem(File file) {
+    if(Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+
+    File[] list = file.listFiles();
+    if(list == null) return;
+
+    List<String> availableCores = Arrays.asList(getAvailableCores());
+
+    // Check each file in a directory to see if it's a native library.
+    for(int i = 0; i < list.length; i++) {
+      File child = list[i];
+      String name = child.getName();
+
+      if(name.startsWith("lib") && name.endsWith(".so") && !name.contains("retroarch-activity")) {
+        // Found a native library!
+        String core = name.subSequence(3, name.length() - 3).toString();
+        String filename = child.getAbsolutePath();
+
+        SharedPreferences prefs = UserPreferences.getPreferences(this);
+        if(!prefs.getBoolean("core_deleted_" + core, false)
+                && availableCores.contains(core)) {
+          // Generate the destination filename and delete any existing symlinks / cores
+          String newFilename = getCorePath() + core + "_libretro_android.so";
+          new File(newFilename).delete();
+
+          try {
+            Os.symlink(filename, newFilename);
+          } catch (Exception e) {
+            // Symlink failed to be created. Should never happen.
+          }
+        }
+      } else if(file.isDirectory()) {
+        // Found another directory, so traverse it
+        traverseFilesystem(child);
+      }
+    }
   }
 }

@@ -62,6 +62,7 @@ enum input_toggle_type
    INPUT_TOGGLE_HOLD_START,
    INPUT_TOGGLE_HOLD_SELECT,
    INPUT_TOGGLE_DOWN_SELECT,
+   INPUT_TOGGLE_L2_R2,
    INPUT_TOGGLE_LAST
 };
 
@@ -69,6 +70,7 @@ enum input_turbo_mode
 {
    INPUT_TURBO_MODE_CLASSIC = 0,
    INPUT_TURBO_MODE_SINGLEBUTTON,
+   INPUT_TURBO_MODE_SINGLEBUTTON_HOLD,
    INPUT_TURBO_MODE_LAST
 };
 
@@ -94,40 +96,10 @@ enum input_action
    INPUT_ACTION_MAX_USERS
 };
 
-enum rarch_input_keyboard_ctl_state
-{
-   RARCH_INPUT_KEYBOARD_CTL_NONE = 0,
-   RARCH_INPUT_KEYBOARD_CTL_IS_LINEFEED_ENABLED,
-
-   RARCH_INPUT_KEYBOARD_CTL_LINE_FREE,
-
-   /*
-    * Waits for keys to be pressed (used for binding
-    * keys in the menu).
-    * Callback returns false when all polling is done.
-    **/
-   RARCH_INPUT_KEYBOARD_CTL_START_WAIT_KEYS,
-
-   /* Cancels keyboard wait for keys function callback. */
-   RARCH_INPUT_KEYBOARD_CTL_CANCEL_WAIT_KEYS
-};
-
 struct retro_keybind
 {
-   bool valid;
-   uint16_t id;
-   enum msg_hash_enums enum_idx;
-   enum retro_key key;
-
-   uint16_t mbutton;
-
-   /* Joypad key. Joypad POV (hats)
-    * are embedded into this key as well. */
-   uint16_t joykey;
-
-   /* Default key binding value -
-    * for resetting bind to default */
-   uint16_t def_joykey;
+   char     *joykey_label;
+   char     *joyaxis_label;
 
    /* Joypad axis. Negative and positive axes
     * are embedded into this variable. */
@@ -140,28 +112,42 @@ struct retro_keybind
    /* Used by input_{push,pop}_analog_dpad(). */
    uint32_t orig_joyaxis;
 
-   char     *joykey_label;
-   char     *joyaxis_label;
+   enum msg_hash_enums enum_idx;
+   enum retro_key key;
+
+   uint16_t id;
+
+   uint16_t mbutton;
+
+   /* Joypad key. Joypad POV (hats)
+    * are embedded into this key as well. */
+   uint16_t joykey;
+
+   /* Default key binding value -
+    * for resetting bind to default */
+   uint16_t def_joykey;
+
+   bool valid;
 };
 
 struct rarch_joypad_info
 {
-   uint16_t joy_idx;
    const struct retro_keybind *auto_binds;
    float axis_threshold;
+   uint16_t joy_idx;
 };
 
 typedef struct
 {
+   unsigned name_index;
+   uint16_t vid;
+   uint16_t pid;
+   char joypad_driver[32];
    char name[256];
    char display_name[256];
    char config_path[PATH_MAX_LENGTH];
    char config_name[PATH_MAX_LENGTH];
-   char joypad_driver[32];
-   uint16_t vid;
-   uint16_t pid;
    bool autoconfigured;
-   unsigned name_index;
 } input_device_info_t;
 
 struct input_driver
@@ -179,8 +165,11 @@ struct input_driver
     * Analog values have same range as a signed 16-bit integer.
     */
    int16_t (*input_state)(void *data,
+         const input_device_driver_t *joypad_data,
+         const input_device_driver_t *sec_joypad_data,
          rarch_joypad_info_t *joypad_info,
          const struct retro_keybind **retro_keybinds,
+         bool keyboard_mapping_blocked,
          unsigned port, unsigned device, unsigned index, unsigned id);
 
    /* Frees the input struct. */
@@ -194,16 +183,11 @@ struct input_driver
 
    void (*grab_mouse)(void *data, bool state);
    bool (*grab_stdin)(void *data);
-   bool (*set_rumble)(void *data, unsigned port,
-         enum retro_rumble_effect effect, uint16_t state);
-   const input_device_driver_t *(*get_joypad_driver)(void *data);
-   const input_device_driver_t *(*get_sec_joypad_driver)(void *data);
-   bool keyboard_mapping_blocked;
 };
 
 struct rarch_joypad_driver
 {
-   bool (*init)(void *data);
+   void *(*init)(void *data);
    bool (*query_pad)(unsigned);
    void (*destroy)(void);
    int16_t (*button)(unsigned, uint16_t);
@@ -241,14 +225,16 @@ struct rarch_joypad_driver
 #elif defined(PSP)
 #define DEFAULT_MAX_PADS 1
 #elif defined(PS2)
-#define DEFAULT_MAX_PADS 2
+#define DEFAULT_MAX_PADS 8
 #elif defined(GEKKO) || defined(HW_RVL)
 #define DEFAULT_MAX_PADS 4
+#elif defined(HAVE_ODROIDGO2)
+#define DEFAULT_MAX_PADS 1
 #elif defined(__linux__) || (defined(BSD) && !defined(__MACH__))
 #define DEFAULT_MAX_PADS 8
 #elif defined(__QNX__)
 #define DEFAULT_MAX_PADS 8
-#elif defined(__CELLOS_LV2__)
+#elif defined(__PS3__)
 #define DEFAULT_MAX_PADS 7
 #elif defined(_XBOX)
 #define DEFAULT_MAX_PADS 4
@@ -296,10 +282,6 @@ bool input_sensor_set_state(unsigned port,
 float input_sensor_get_input(unsigned port, unsigned id);
 
 void *input_driver_get_data(void);
-
-input_driver_t *input_get_ptr(void);
-
-void *input_get_data(void);
 
 void input_driver_set_nonblock_state(void);
 
@@ -368,20 +350,6 @@ const input_device_driver_t *input_joypad_init_driver(
          ident_plus  = RARCH_ANALOG_RIGHT_Y_PLUS; \
          break; \
    }
-
-/**
- * input_joypad_set_rumble:
- * @drv                     : Input device driver handle.
- * @port                    : User number.
- * @effect                  : Rumble effect to set.
- * @strength                : Strength of rumble effect.
- *
- * Sets rumble effect @effect with strength @strength.
- *
- * Returns: true (1) if successful, otherwise false (0).
- **/
-bool input_joypad_set_rumble(const input_device_driver_t *driver,
-      unsigned port, enum retro_rumble_effect effect, uint16_t strength);
 
 /**
  * input_pad_connect:
@@ -552,6 +520,7 @@ extern input_device_driver_t parport_joypad;
 extern input_device_driver_t udev_joypad;
 extern input_device_driver_t xinput_joypad;
 extern input_device_driver_t sdl_joypad;
+extern input_device_driver_t sdl_dingux_joypad;
 extern input_device_driver_t ps4_joypad;
 extern input_device_driver_t ps3_joypad;
 extern input_device_driver_t psp_joypad;
@@ -570,6 +539,7 @@ extern input_device_driver_t rwebpad_joypad;
 
 extern input_driver_t input_android;
 extern input_driver_t input_sdl;
+extern input_driver_t input_sdl_dingux;
 extern input_driver_t input_dinput;
 extern input_driver_t input_x;
 extern input_driver_t input_ps4;

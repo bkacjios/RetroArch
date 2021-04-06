@@ -51,29 +51,31 @@ enum pl_thumb_status
 
 typedef struct pl_thumb_handle
 {
-   bool overwrite;
-   bool right_thumbnail_exists;
-   bool left_thumbnail_exists;
-   bool http_task_complete;
-   enum pl_thumb_status status;
+   char *system;
+   char *playlist_path;
+   char *dir_thumbnails;
+   playlist_t *playlist;
+   gfx_thumbnail_path_data_t *thumbnail_path_data;
+   retro_task_t *http_task;
+
+   playlist_config_t playlist_config; /* size_t alignment */
 
    size_t list_size;
    size_t list_index;
    unsigned type_idx;
 
-   char *system;
-   char *playlist_path;
-   char *dir_thumbnails;
-   playlist_t *playlist;
-   playlist_config_t playlist_config;
-   gfx_thumbnail_path_data_t *thumbnail_path_data;
-   retro_task_t *http_task;
+   enum pl_thumb_status status;
+
+   bool overwrite;
+   bool right_thumbnail_exists;
+   bool left_thumbnail_exists;
+   bool http_task_complete;
 } pl_thumb_handle_t;
 
 typedef struct pl_entry_id
 {
-   size_t idx;
    char *playlist_path;
+   size_t idx;
 } pl_entry_id_t;
 
 /*********************/
@@ -150,7 +152,7 @@ static bool get_thumbnail_paths(
    
    /* Generate remote path */
    snprintf(raw_url, sizeof(raw_url), "%s/%s/%s/%s",
-         file_path_str(FILE_PATH_CORE_THUMBNAILS_URL),
+         FILE_PATH_CORE_THUMBNAILS_URL,
          system_name,
          sub_dir,
          img_name
@@ -173,12 +175,11 @@ void cb_http_task_download_pl_thumbnail(
       retro_task_t *task, void *task_data,
       void *user_data, const char *err)
 {
+   char output_dir[PATH_MAX_LENGTH];
    http_transfer_data_t *data  = (http_transfer_data_t*)task_data;
    file_transfer_t *transf     = (file_transfer_t*)user_data;
    pl_thumb_handle_t *pl_thumb = NULL;
-   char output_dir[PATH_MAX_LENGTH];
-
-   output_dir[0] = '\0';
+   output_dir[0]               = '\0';
 
    /* Update pl_thumb task status
     * > Do this first, to minimise the risk of hanging
@@ -224,13 +225,6 @@ finish:
    {
       RARCH_ERR("Download of '%s' failed: %s\n",
             (transf ? transf->path: "unknown"), err);
-   }
-
-   if (data)
-   {
-      if (data->data)
-         free(data->data);
-      free(data);
    }
 
    if (transf)
@@ -345,101 +339,96 @@ static void task_pl_thumbnail_download_handler(retro_task_t *task)
    switch (pl_thumb->status)
    {
       case PL_THUMB_BEGIN:
-         {
-            /* Load playlist */
-            if (!path_is_valid(pl_thumb->playlist_config.path))
-               goto task_finished;
-            
-            pl_thumb->playlist = playlist_init(&pl_thumb->playlist_config);
-            
-            if (!pl_thumb->playlist)
-               goto task_finished;
-            
-            pl_thumb->list_size = playlist_size(pl_thumb->playlist);
-            
-            if (pl_thumb->list_size < 1)
-               goto task_finished;
-            
-            /* Initialise thumbnail path data */
-            pl_thumb->thumbnail_path_data = gfx_thumbnail_path_init();
-            
-            if (!pl_thumb->thumbnail_path_data)
-               goto task_finished;
-            
-            if (!gfx_thumbnail_set_system(
-                  pl_thumb->thumbnail_path_data, pl_thumb->system, pl_thumb->playlist))
-               goto task_finished;
-            
-            /* All good - can start iterating */
-            pl_thumb->status = PL_THUMB_ITERATE_ENTRY;
-         }
+         /* Load playlist */
+         if (!path_is_valid(pl_thumb->playlist_config.path))
+            goto task_finished;
+
+         pl_thumb->playlist = playlist_init(&pl_thumb->playlist_config);
+
+         if (!pl_thumb->playlist)
+            goto task_finished;
+
+         pl_thumb->list_size = playlist_size(pl_thumb->playlist);
+
+         if (pl_thumb->list_size < 1)
+            goto task_finished;
+
+         /* Initialise thumbnail path data */
+         pl_thumb->thumbnail_path_data = gfx_thumbnail_path_init();
+
+         if (!pl_thumb->thumbnail_path_data)
+            goto task_finished;
+
+         if (!gfx_thumbnail_set_system(
+                  pl_thumb->thumbnail_path_data,
+                  pl_thumb->system, pl_thumb->playlist))
+            goto task_finished;
+
+         /* All good - can start iterating */
+         pl_thumb->status = PL_THUMB_ITERATE_ENTRY;
          break;
       case PL_THUMB_ITERATE_ENTRY:
-         {
-            /* Set current thumbnail content */
-            if (gfx_thumbnail_set_content_playlist(
+         /* Set current thumbnail content */
+         if (gfx_thumbnail_set_content_playlist(
                   pl_thumb->thumbnail_path_data, pl_thumb->playlist, pl_thumb->list_index))
-            {
-               const char *label = NULL;
-               
-               /* Update progress display */
-               task_free_title(task);
-               if (gfx_thumbnail_get_label(pl_thumb->thumbnail_path_data, &label))
-                  task_set_title(task, strdup(label));
-               else
-                  task_set_title(task, strdup(""));
-               task_set_progress(task, (pl_thumb->list_index * 100) / pl_thumb->list_size);
-               
-               /* Start iterating over thumbnail type */
-               pl_thumb->type_idx = 1;
-               pl_thumb->status = PL_THUMB_ITERATE_TYPE;
-            }
+         {
+            const char *label = NULL;
+
+            /* Update progress display */
+            task_free_title(task);
+            if (gfx_thumbnail_get_label(pl_thumb->thumbnail_path_data, &label))
+               task_set_title(task, strdup(label));
             else
-            {
-               /* Current playlist entry is broken - advance to
-                * the next one */
-               pl_thumb->list_index++;
-               if (pl_thumb->list_index >= pl_thumb->list_size)
-                  pl_thumb->status = PL_THUMB_END;
-            }
+               task_set_title(task, strdup(""));
+            task_set_progress(task, (pl_thumb->list_index * 100) / pl_thumb->list_size);
+
+            /* Start iterating over thumbnail type */
+            pl_thumb->type_idx  = 1;
+            pl_thumb->status    = PL_THUMB_ITERATE_TYPE;
+         }
+         else
+         {
+            /* Current playlist entry is broken - advance to
+             * the next one */
+            pl_thumb->list_index++;
+            if (pl_thumb->list_index >= pl_thumb->list_size)
+               pl_thumb->status = PL_THUMB_END;
          }
          break;
       case PL_THUMB_ITERATE_TYPE:
+         /* Ensure that we only enqueue one transfer
+          * at a time... */
+
+         /* > If HTTP task is NULL, then it either finished
+          *   or an error occurred - in either case,
+          *   current task is 'complete' */
+         if (!pl_thumb->http_task)
+            pl_thumb->http_task_complete = true;
+
+         /* > Wait for task_push_http_transfer_file()
+          *   callback to trigger */
+         if (!pl_thumb->http_task_complete)
+            break;
+
+         pl_thumb->http_task = NULL;
+
+         /* Check whether all thumbnail types have been processed */
+         if (pl_thumb->type_idx > 3)
          {
-            /* Ensure that we only enqueue one transfer
-             * at a time... */
-            
-            /* > If HTTP task is NULL, then it either finished
-             *   or an error occurred - in either case,
-             *   current task is 'complete' */
-            if (!pl_thumb->http_task)
-               pl_thumb->http_task_complete = true;
-            
-            /* > Wait for task_push_http_transfer_file()
-             *   callback to trigger */
-            if (pl_thumb->http_task_complete)
-               pl_thumb->http_task = NULL;
+            /* Time to move on to the next entry */
+            pl_thumb->list_index++;
+            if (pl_thumb->list_index < pl_thumb->list_size)
+               pl_thumb->status = PL_THUMB_ITERATE_ENTRY;
             else
-               break;
-            
-            /* Check whether all thumbnail types have been processed */
-            if (pl_thumb->type_idx > 3)
-            {
-               /* Time to move on to the next entry */
-               pl_thumb->list_index++;
-               if (pl_thumb->list_index < pl_thumb->list_size)
-                  pl_thumb->status = PL_THUMB_ITERATE_ENTRY;
-               else
-                  pl_thumb->status = PL_THUMB_END;
-               break;
-            }
-            
-            /* Download current thumbnail */
-            download_pl_thumbnail(pl_thumb);
-            
-            /* Increment thumbnail type */
-            pl_thumb->type_idx++;
+               pl_thumb->status = PL_THUMB_END;
+            break;
          }
+
+         /* Download current thumbnail */
+         download_pl_thumbnail(pl_thumb);
+
+         /* Increment thumbnail type */
+         pl_thumb->type_idx++;
          break;
       case PL_THUMB_END:
       default:
@@ -505,7 +494,7 @@ bool task_push_pl_thumbnail_download(
                STRLEN_CONST("_history.lpl")
                ) 
          || string_is_equal(playlist_file,
-            file_path_str(FILE_PATH_CONTENT_FAVORITES))
+            FILE_PATH_CONTENT_FAVORITES)
          || string_is_equal(system, "history")
          || string_is_equal(system, "favorites"))
       goto error;

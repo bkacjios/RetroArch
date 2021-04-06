@@ -33,6 +33,9 @@
  * The first time an element is added, memory for 16 elements are allocated.
  * Then every time length is about to exceed capacity, capacity is doubled.
  *
+ * Be careful not to supply modifying statements to the macro arguments.
+ * Something like RBUF_REMOVE(buf, i--); would have unintended results.
+ *
  * Sample usage:
  *
  * mytype_t* buf = NULL;
@@ -74,6 +77,7 @@
 #define RBUF_RESIZE(b, sz) (RBUF_FIT((b), (sz)), ((b) ? RBUF__HDR(b)->len = (sz) : 0))
 #define RBUF_CLEAR(b) ((b) ? RBUF__HDR(b)->len = 0 : 0)
 #define RBUF_TRYFIT(b, n) (RBUF_FIT((b), (n)), (((b) && RBUF_CAP(b) >= (size_t)(n)) || !(n)))
+#define RBUF_REMOVE(b, idx) memmove((b) + (idx), (b) + (idx) + 1, (--RBUF__HDR(b)->len - (idx)) * sizeof(*(b)))
 
 struct rbuf__hdr
 {
@@ -81,6 +85,12 @@ struct rbuf__hdr
    size_t cap;
 };
 
+#ifdef __GNUC__
+__attribute__((__unused__))
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4505) //unreferenced local function has been removed
+#endif
 static void *rbuf__grow(void *buf,
       size_t new_len, size_t elem_size)
 {
@@ -103,5 +113,8 @@ static void *rbuf__grow(void *buf,
    new_hdr->cap    = new_cap;
    return new_hdr + 1;
 }
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #endif

@@ -27,6 +27,17 @@
 #include <retro_miscellaneous.h>
 #include <string/stdstring.h>
 
+/* Was told by contributor that Windows support is pending,
+ * so exclude Windows for now */
+#if defined(HAVE_FONTCONFIG) && !defined(_WIN32)
+#define HAVE_FONTCONFIG_SUPPORT
+#endif
+
+#if defined(HAVE_FONTCONFIG_SUPPORT)
+#include <fontconfig/fontconfig.h>
+#include "../../msg_hash.h"
+#endif
+
 #ifdef WIIU
 #include <wiiu/os.h>
 #endif
@@ -40,21 +51,21 @@
 
 typedef struct freetype_atlas_slot
 {
-   struct font_glyph glyph;
+   struct freetype_atlas_slot* next;   /* ptr alignment */
+   struct font_glyph glyph;            /* unsigned alignment */
    unsigned charcode;
    unsigned last_used;
-   struct freetype_atlas_slot* next;
 }freetype_atlas_slot_t;
 
 typedef struct freetype_renderer
 {
-   FT_Library lib;
-   FT_Face face;
-   struct font_atlas atlas;
-   freetype_atlas_slot_t atlas_slots[FT_ATLAS_SIZE];
-   freetype_atlas_slot_t* uc_map[0x100];
+   FT_Library lib;                                   /* ptr alignment   */
+   FT_Face face;                                     /* ptr alignment   */
+   struct font_atlas atlas;                          /* ptr alignment   */
+   freetype_atlas_slot_t atlas_slots[FT_ATLAS_SIZE]; /* ptr alignment   */
+   freetype_atlas_slot_t* uc_map[0x100];             /* ptr alignment   */
    unsigned usage_counter;
-   struct font_line_metrics line_metrics;
+   struct font_line_metrics line_metrics;            /* float alignment */
 } ft_font_renderer_t;
 
 static struct font_atlas *font_renderer_ft_get_atlas(void *data)
@@ -205,7 +216,7 @@ static bool font_renderer_create_atlas(ft_font_renderer_t *handle, float font_si
       font_renderer_ft_get_glyph(handle, i);
 
    for (i = 0; i < 256; i++)
-      if (isalnum(i))
+      if (ISALNUM(i))
          font_renderer_ft_get_glyph(handle, i);
 
    return true;
@@ -238,8 +249,57 @@ static void *font_renderer_ft_init(const char *font_path, float font_size)
          goto error;
 
       err = FT_New_Memory_Face(handle->lib, font_data, font_size, 0, &handle->face);
-      if (err)
+   }
+   else
+#elif defined(HAVE_FONTCONFIG_SUPPORT)
+   /* if fallback font is requested, instead of loading it, we find the full font in the system */
+   if (!*font_path || strstr(font_path, "fallback"))
+   {
+      FcValue locale_boxed;
+      FcPattern *found     = NULL;
+      FcConfig* config     = FcInitLoadConfigAndFonts();
+      FcResult result      = FcResultNoMatch;
+      FcChar8 *_font_path  = NULL;
+      int face_index       = 0;
+      /* select Sans fonts */
+      FcPattern* pattern   = FcNameParse((const FcChar8*)"Sans");
+      /* since fontconfig uses LL-TT style, we need to normalize 
+       * locale names */
+      FcChar8* locale      = FcLangNormalize((const FcChar8*)get_user_language_iso639_1(false));
+      /* configure fontconfig substitute policies, this 
+       * will increase the search scope */
+      FcConfigSubstitute(config, pattern, FcMatchPattern);
+      /* pull in system-wide defaults, so the 
+       * font selection respects system (or user) configurations */
+      FcDefaultSubstitute(pattern);
+
+      /* Box the locale data in a FcValue container */
+      locale_boxed.type = FcTypeString;
+      locale_boxed.u.s  = locale;
+
+      /* Override locale settins, since we are not using the system locale */
+      FcPatternAdd(pattern, FC_LANG, locale_boxed, false);
+
+      /* Let's find the best matching font given our search criteria */
+      found             = FcFontMatch(config, pattern, &result);
+
+      /* uh-oh, for some reason, we can't find any font */
+      if (result != FcResultMatch)
          goto error;
+      if (FcPatternGetString(found, FC_FILE, 0, &_font_path) != FcResultMatch)
+         goto error;
+      if (FcPatternGetInteger(found, FC_INDEX, 0, &face_index) != FcResultMatch)
+         goto error;
+
+      /* Initialize font renderer */
+      err = FT_New_Face(handle->lib, (const char*)_font_path,
+            face_index, &handle->face);
+
+      /* free up fontconfig internal structures */
+      FcPatternDestroy(pattern);
+      FcPatternDestroy(found);
+      FcStrFree(locale);
+      FcConfigDestroy(config);
    }
    else
 #endif
@@ -247,9 +307,10 @@ static void *font_renderer_ft_init(const char *font_path, float font_size)
       if (!path_is_valid(font_path))
          goto error;
       err = FT_New_Face(handle->lib, font_path, 0, &handle->face);
-      if (err)
-         goto error;
    }
+
+   if (err)
+      goto error;
 
    err = FT_Select_Charmap(handle->face, FT_ENCODING_UNICODE);
    if (err)
@@ -305,7 +366,9 @@ static const char *font_paths[] = {
 /* Highly OS/platform dependent. */
 static const char *font_renderer_ft_get_default_font(void)
 {
-#ifdef WIIU
+/* Since fontconfig will return parameters more than a simple path
+   we will process these in the init function */
+#if defined(WIIU) || defined(HAVE_FONTCONFIG_SUPPORT)
    return "";
 #else
    size_t i;

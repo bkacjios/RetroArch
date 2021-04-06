@@ -27,16 +27,16 @@
 typedef struct
 {
    vk_t *vk;
-   struct vk_texture texture;
-   struct vk_texture texture_optimal;
-   const font_renderer_driver_t *font_driver;
    void *font_data;
    struct font_atlas *atlas;
-   bool needs_update;
-
+   const font_renderer_driver_t *font_driver;
    struct vk_vertex *pv;
+   struct vk_texture texture;
+   struct vk_texture texture_optimal;
    struct vk_buffer_range range;
    unsigned vertices;
+
+   bool needs_update;
 } vulkan_raster_t;
 
 static INLINE void vulkan_raster_font_update_glyph(
@@ -210,16 +210,22 @@ static void vulkan_raster_font_render_line(
       width  = glyph->width;
       height = glyph->height;
 
-      vulkan_write_quad_vbo(font->pv + font->vertices,
-            (x + (off_x + delta_x) * scale) * inv_win_width,
-            (y + (off_y + delta_y) * scale) * inv_win_height,
-            width * scale * inv_win_width,
-            height * scale * inv_win_height,
-            tex_x * inv_tex_size_x,
-            tex_y * inv_tex_size_y,
-            width * inv_tex_size_x,
-            height * inv_tex_size_y,
-            &vk_color);
+      {
+         struct vk_vertex *pv          = font->pv + font->vertices;
+         float _x                      = (x + (off_x + delta_x) * scale)
+            * inv_win_width;
+         float _y                      = (y + (off_y + delta_y) * scale)
+            * inv_win_height;
+         float _width                  = width  * scale * inv_win_width;
+         float _height                 = height * scale * inv_win_height;
+         float _tex_x                  = tex_x * inv_tex_size_x;
+         float _tex_y                  = tex_y * inv_tex_size_y;
+         float _tex_width              = width * inv_tex_size_x;
+         float _tex_height             = height * inv_tex_size_y;
+         const struct vk_color *_color = &vk_color;
+
+         VULKAN_WRITE_QUAD_VBO(pv, _x, _y, _width, _height, _tex_x, _tex_y, _tex_width, _tex_height, _color);
+      }
 
       font->vertices += 6;
 
@@ -288,6 +294,8 @@ static void vulkan_raster_font_flush(vulkan_raster_t *font)
       VkSubmitInfo submit_info;
       VkCommandBufferAllocateInfo cmd_info;
       VkCommandBufferBeginInfo begin_info;
+      struct vk_texture *dynamic_tex  = NULL;
+      struct vk_texture *staging_tex  = NULL;
 
       cmd_info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
       cmd_info.pNext              = NULL;
@@ -302,8 +310,13 @@ static void vulkan_raster_font_flush(vulkan_raster_t *font)
       begin_info.pInheritanceInfo = NULL;
       vkBeginCommandBuffer(staging, &begin_info);
 
-      vulkan_copy_staging_to_dynamic(font->vk, staging,
-            &font->texture_optimal, &font->texture);
+      VULKAN_SYNC_TEXTURE_TO_GPU_COND_OBJ(font->vk, font->texture);
+
+      dynamic_tex                 = &font->texture_optimal;
+      staging_tex                 = &font->texture;
+
+      VULKAN_COPY_STAGING_TO_DYNAMIC(font->vk, staging,
+            dynamic_tex, staging_tex);
 
       vkEndCommandBuffer(staging);
 

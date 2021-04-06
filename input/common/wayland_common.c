@@ -72,24 +72,38 @@ static void keyboard_handle_key(void *data,
 {
    int value                  = 1;
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
+   uint32_t keysym            = key;
+
+   /* Handle 'duplicate' inputs that correspond
+    * to the same RETROK_* key */
+   switch (key)
+   {
+      case KEY_OK:
+      case KEY_SELECT:
+         keysym = KEY_ENTER;
+      case KEY_EXIT:
+         keysym = KEY_CLEAR;
+      default:
+         break;
+   }
 
    if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
    {
-      BIT_SET(wl->input.key_state, key);
+      BIT_SET(wl->input.key_state, keysym);
       value = 1;
    }
    else if (state == WL_KEYBOARD_KEY_STATE_RELEASED)
    {
-      BIT_CLEAR(wl->input.key_state, key);
+      BIT_CLEAR(wl->input.key_state, keysym);
       value = 0;
    }
 
 #ifdef HAVE_XKBCOMMON
-   if (handle_xkb(key, value) == 0)
+   if (handle_xkb(keysym, value) == 0)
       return;
 #endif
    input_keyboard_event(value,
-			input_keymaps_translate_keysym_to_rk(key),
+			input_keymaps_translate_keysym_to_rk(keysym),
          0, 0, RETRO_DEVICE_KEYBOARD);
 }
 
@@ -405,10 +419,7 @@ static void seat_handle_capabilities(void *data,
 }
 
 static void seat_handle_name(void *data,
-      struct wl_seat *seat, const char *name)
-{
-   RARCH_LOG("[Wayland]: Seat name: %s.\n", name);
-}
+      struct wl_seat *seat, const char *name) { }
 
 /* Surface callbacks. */
 
@@ -424,10 +435,9 @@ static void wl_surface_enter(void *data, struct wl_surface *wl_surface,
     {
        if (oi->output == output)
        {
-          RARCH_LOG("[Wayland]: Entering output #%d, scale %d\n", oi->global_id, oi->scale);
-          wl->current_output = oi;
+          wl->current_output    = oi;
           wl->last_buffer_scale = wl->buffer_scale;
-          wl->buffer_scale = oi->scale;
+          wl->buffer_scale      = oi->scale;
           break;
        }
     };
@@ -486,9 +496,6 @@ static void display_handle_geometry(void *data,
    output_info_t *oi          = (output_info_t*)data;
    oi->physical_width         = physical_width;
    oi->physical_height        = physical_height;
-
-   RARCH_LOG("[Wayland]: Physical width: %d mm x %d mm.\n",
-         physical_width, physical_height);
 }
 
 static void display_handle_mode(void *data,
@@ -505,11 +512,6 @@ static void display_handle_mode(void *data,
    oi->width                  = width;
    oi->height                 = height;
    oi->refresh_rate           = refresh;
-
-   /* Certain older Wayland implementations report in Hz,
-    * but it should be mHz. */
-   RARCH_LOG("[Wayland]: Video mode: %d x %d @ %.4f Hz.\n",
-         width, height, refresh > 1000 ? refresh / 1000.0 : (double)refresh);
 }
 
 static void display_handle_done(void *data,
@@ -520,8 +522,6 @@ static void display_handle_scale(void *data,
       int32_t factor)
 {
    output_info_t *oi = (output_info_t*)data;
-
-   RARCH_LOG("[Wayland]: Display scale factor %d.\n", factor);
    oi->scale = factor;
 }
 

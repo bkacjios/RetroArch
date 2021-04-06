@@ -40,7 +40,6 @@
 #define TASK_FINISHED_DURATION            3000
 #define HOURGLASS_INTERVAL                5000
 #define HOURGLASS_DURATION                1000
-#define GENERIC_MESSAGE_DURATION          3000
 
 /* TODO: Colors for warning, error and success */
 
@@ -90,13 +89,13 @@ enum notification_show_screenshot_flash
 typedef struct
 {
    font_data_t *font;
-   video_font_raster_block_t raster_block;
+   video_font_raster_block_t raster_block; /* ptr alignment */
+   size_t usage_count;
    unsigned glyph_width;
    float line_height;
    float line_ascender;
    float line_descender;
    float line_centre_offset;
-   size_t usage_count;
 } gfx_widget_font_data_t;
 
 /* Font data */
@@ -117,61 +116,68 @@ typedef struct disp_widget_msg
 {
    char *msg;
    char *msg_new;
-   float msg_transition_animation;
+   retro_task_t *task_ptr;
+   /* Used to detect title change */
+   char *task_title_ptr;
+
+   uint32_t task_ident;
    unsigned msg_len;
    unsigned duration;
-
    unsigned text_height;
+   unsigned width;
 
+   float msg_transition_animation;
    float offset_y;
    float alpha;
+   float unfold;
+   float hourglass_rotation;
+   gfx_timer_t hourglass_timer; /* float alignment */
+   gfx_timer_t expiration_timer; /* float alignment */
 
+   int8_t task_progress;
+   /* How many tasks have used this notification? */
+   uint8_t task_count;
+
+   bool task_finished;
+   bool task_error;
+   bool task_cancelled;
+   bool expiration_timer_started;
    /* Is it currently doing the fade out animation ? */
    bool dying;
    /* Has the timer expired ? if so, should be set to dying */
    bool expired;
-   unsigned width;
-
-   gfx_timer_t expiration_timer;
-   bool expiration_timer_started;
-
-   retro_task_t *task_ptr;
-   /* Used to detect title change */
-   char *task_title_ptr;
-   /* How many tasks have used this notification? */
-   uint8_t task_count;
-
-   int8_t task_progress;
-   bool task_finished;
-   bool task_error;
-   bool task_cancelled;
-   uint32_t task_ident;
-
    /* Unfold animation */
    bool unfolded;
    bool unfolding;
-   float unfold;
-
-   float hourglass_rotation;
-   gfx_timer_t hourglass_timer;
 } disp_widget_msg_t;
 
 typedef struct dispgfx_widget
 {
-   /* There can only be one message animation at a time to 
-    * avoid confusing users */
-   bool widgets_moving;
-   bool widgets_inited;
-   bool msg_queue_has_icons;
+   uint64_t gfx_widgets_frame_count;
+
+#ifdef HAVE_THREADS
+   slock_t* current_msgs_lock;
+#endif
+   fifo_buffer_t msg_queue;
+   disp_widget_msg_t* current_msgs[MSG_QUEUE_ONSCREEN_MAX];
+   gfx_widget_fonts_t gfx_widget_fonts; /* ptr alignment */
+
+#ifdef HAVE_TRANSLATE
+   uintptr_t ai_service_overlay_texture;
+#endif
+   uintptr_t msg_queue_icon;
+   uintptr_t msg_queue_icon_outline;
+   uintptr_t msg_queue_icon_rect;
+   uintptr_t gfx_widgets_icons_textures[
+   MENU_WIDGETS_ICON_LAST];
+   uintptr_t gfx_widgets_generic_tag;
+
+   size_t current_msgs_size;
 
 #ifdef HAVE_TRANSLATE
    int ai_service_overlay_state;
 #endif
-   float last_scale_factor;
-#ifdef HAVE_TRANSLATE
-   unsigned ai_service_overlay_width;
-   unsigned ai_service_overlay_height;
-#endif
+
    unsigned last_video_width;
    unsigned last_video_height;
    unsigned msg_queue_kill;
@@ -202,26 +208,22 @@ typedef struct dispgfx_widget
    unsigned msg_queue_task_hourglass_x;
    unsigned divider_width_1px;
 
-   uint64_t gfx_widgets_frame_count;
-
+   float last_scale_factor;
+   float backdrop_orig[16];
+   float msg_queue_bg[16];
+   float pure_white[16];
 #ifdef HAVE_TRANSLATE
-   uintptr_t ai_service_overlay_texture;
+   unsigned ai_service_overlay_width;
+   unsigned ai_service_overlay_height;
 #endif
-   uintptr_t msg_queue_icon;
-   uintptr_t msg_queue_icon_outline;
-   uintptr_t msg_queue_icon_rect;
-   uintptr_t gfx_widgets_icons_textures[
-   MENU_WIDGETS_ICON_LAST];
 
    char gfx_widgets_status_text[255];
-   uintptr_t gfx_widgets_generic_tag;
-   gfx_widget_fonts_t gfx_widget_fonts;
-   fifo_buffer_t *msg_queue;
-   disp_widget_msg_t* current_msgs[MSG_QUEUE_ONSCREEN_MAX];
-   size_t current_msgs_size;
-#ifdef HAVE_THREADS
-   slock_t* current_msgs_lock;
-#endif
+
+   /* There can only be one message animation at a time to 
+    * avoid confusing users */
+   bool widgets_moving;
+   bool widgets_inited;
+   bool msg_queue_has_icons;
 } dispgfx_widget_t;
 
 
@@ -269,37 +271,13 @@ struct gfx_widget
    void (*frame)(void* data, void *userdata);
 };
 
-uintptr_t gfx_widgets_get_generic_tag(void *data);
-
-float* gfx_widgets_get_pure_white(void);
-
-unsigned gfx_widgets_get_padding(void *data);
-
-unsigned gfx_widgets_get_height(void *data);
-
-gfx_widget_font_data_t* gfx_widgets_get_font_regular(void *data);
-
-gfx_widget_font_data_t* gfx_widgets_get_font_bold(void *data);
-
-gfx_widget_font_data_t* gfx_widgets_get_font_msg_queue(void *data);
-
-float* gfx_widgets_get_backdrop_orig(void);
-
-unsigned gfx_widgets_get_last_video_width(void *data);
-
-unsigned gfx_widgets_get_last_video_height(void *data);
-
-unsigned gfx_widgets_get_generic_message_height(void *data);
-
-/* Warning: not thread safe! */
-size_t gfx_widgets_get_msg_queue_size(void *data);
-
 float gfx_widgets_get_thumbnail_scale_factor(
       const float dst_width, const float dst_height,
       const float image_width, const float image_height);
 
 void gfx_widgets_draw_icon(
       void *userdata,
+      void *data_disp,
       unsigned video_width,
       unsigned video_height,
       unsigned icon_width,
@@ -325,12 +303,15 @@ void gfx_widgets_flush_text(
 typedef struct gfx_widget gfx_widget_t;
 
 bool gfx_widgets_init(
+      void *data,
+      void *data_disp,
+      void *settings_data,
       uintptr_t widgets_active_ptr,
       bool video_is_threaded,
       unsigned width, unsigned height, bool fullscreen,
       const char *dir_assets, char *font_path);
 
-bool gfx_widgets_deinit(bool widgets_persisting);
+void gfx_widgets_deinit(void *data, bool widgets_persisting);
 
 void gfx_widgets_msg_queue_push(
       void *data,
@@ -347,6 +328,8 @@ void gfx_widget_volume_update_and_show(float new_volume,
 
 void gfx_widgets_iterate(
       void *data,
+      void *data_disp,
+      void *settings_data,
       unsigned width, unsigned height, bool fullscreen,
       const char *dir_assets, char *font_path,
       bool is_threaded);
@@ -366,10 +349,13 @@ void gfx_widgets_ai_service_overlay_unload(dispgfx_widget_t *p_dispwidget);
 
 #ifdef HAVE_CHEEVOS
 void gfx_widgets_push_achievement(const char *title, const char *badge);
+void gfx_widgets_set_leaderboard_display(unsigned id, const char* value);
 #endif
 
 /* Warning: not thread safe! */
-void gfx_widget_set_message(char *message);
+void gfx_widget_set_generic_message(
+      void *data,
+      const char *message, unsigned duration);
 
 /* Warning: not thread safe! */
 void gfx_widget_set_libretro_message(
@@ -391,10 +377,6 @@ void gfx_widgets_frame(void *data);
 
 void *dispwidget_get_ptr(void);
 
-bool gfx_widgets_set_status_text(
-      void *data,
-      const char *new_status_text);
-
 extern const gfx_widget_t gfx_widget_screenshot;
 extern const gfx_widget_t gfx_widget_volume;
 extern const gfx_widget_t gfx_widget_generic_message;
@@ -404,6 +386,7 @@ extern const gfx_widget_t gfx_widget_load_content_animation;
 
 #ifdef HAVE_CHEEVOS
 extern const gfx_widget_t gfx_widget_achievement_popup;
+extern const gfx_widget_t gfx_widget_leaderboard_display;
 #endif
 
 #endif

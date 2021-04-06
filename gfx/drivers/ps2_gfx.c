@@ -107,25 +107,25 @@ static void deinit_GSGlobal(GSGLOBAL *gsGlobal)
    gsKit_deinit_global(gsGlobal);
 }
 
-// Copy of gsKit_sync_flip, but without the 'flip'
+/* Copy of gsKit_sync_flip, but without the 'flip' */
 static void gsKit_sync(GSGLOBAL *gsGlobal)
 {
-   if(!gsGlobal->FirstFrame)
+   if (!gsGlobal->FirstFrame)
       WaitSema(vsync_sema_id);
-      
-      while (PollSema(vsync_sema_id) >= 0)
-         ;
+
+   while (PollSema(vsync_sema_id) >= 0);
 }
 
-// Copy of gsKit_sync_flip, but without the 'sync'
-   static void gsKit_flip(GSGLOBAL *gsGlobal)
+/* Copy of gsKit_sync_flip, but without the 'sync' */
+static void gsKit_flip(GSGLOBAL *gsGlobal)
+{
+   if (!gsGlobal->FirstFrame)
    {
-   if(!gsGlobal->FirstFrame)
-   {
-      if(gsGlobal->DoubleBuffering == GS_SETTING_ON)
+      if (gsGlobal->DoubleBuffering == GS_SETTING_ON)
       {
-         GS_SET_DISPFB2( gsGlobal->ScreenBuffer[gsGlobal->ActiveBuffer & 1] / 8192,
-            gsGlobal->Width / 64, gsGlobal->PSM, 0, 0 );
+         GS_SET_DISPFB2( gsGlobal->ScreenBuffer[
+               gsGlobal->ActiveBuffer & 1] / 8192,
+               gsGlobal->Width / 64, gsGlobal->PSM, 0, 0 );
 
          gsGlobal->ActiveBuffer ^= 1;
       }
@@ -251,7 +251,7 @@ static void *ps2_gfx_init(const video_info_t *video,
    if (input && input_data)
    {
       settings_t *settings = config_get_ptr();
-      ps2input             = input_ps2.init(
+      ps2input             = input_driver_init_wrap(&input_ps2,
             settings->arrays.input_joypad_driver);
       *input               = ps2input ? &input_ps2 : NULL;
       *input_data          = ps2input;
@@ -274,7 +274,7 @@ static bool ps2_gfx_frame(void *data, const void *frame,
 
 #if defined(DEBUG)
    if (frame_count % 180 == 0)
-      printf("ps2_gfx_frame %lu\n", frame_count);
+      printf("ps2_gfx_frame %llu\n", frame_count);
 #endif
 
    if (frame)
@@ -315,7 +315,7 @@ static bool ps2_gfx_frame(void *data, const void *frame,
                osd_params, NULL);
    }
 
-   if(!string_is_empty(msg))
+   if (!string_is_empty(msg))
       font_driver_render_msg(ps2, msg, NULL, NULL);
 
    refreshScreen(ps2);

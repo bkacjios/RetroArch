@@ -160,24 +160,16 @@ enum BootDeviceIDs getBootDeviceID(char *path)
  * This will ensure that the emulator will be able to load its files.
  */
 
-bool waitUntilDeviceIsReady(enum BootDeviceIDs device_id)
+bool waitUntilDeviceIsReady(char *path)
 {
-   struct stat buffer;   
+   struct stat buffer;
    int ret = -1;
-   int retries = 10;
-   char *rootDevice = rootDevicePath(device_id);
+   int retries = 50;
 
    while(ret != 0 && retries > 0)
    {
-      ret = stat(rootDevice, &buffer);
+      ret = stat(path, &buffer);
       /* Wait untill the device is ready */
-      nopdelay();
-      nopdelay();
-      nopdelay();
-      nopdelay();
-      nopdelay();
-      nopdelay();
-      nopdelay();
       nopdelay();
 
       retries--;

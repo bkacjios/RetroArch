@@ -61,20 +61,9 @@ static const float *gfx_display_gl_core_get_default_vertices(void)
    return &gl_core_vertexes[0];
 }
 
-static const float *gfx_display_gl_core_get_default_color(void)
-{
-   return &gl_core_colors[0];
-}
-
 static const float *gfx_display_gl_core_get_default_tex_coords(void)
 {
    return &gl_core_tex_coords[0];
-}
-
-static void gfx_display_gl_core_viewport(gfx_display_ctx_draw_t *draw, void *data) 
-{
-   if (draw)
-      glViewport(draw->x, draw->y, draw->width, draw->height);
 }
 
 static void gfx_display_gl_core_draw_pipeline(gfx_display_ctx_draw_t *draw,
@@ -89,6 +78,7 @@ static void gfx_display_gl_core_draw_pipeline(gfx_display_ctx_draw_t *draw,
    static float t                = 0.0f;
    float yflip                   = 0.0f;
    video_coord_array_t *ca       = NULL;
+   gfx_display_t *p_disp         = disp_get_ptr();
    gl_core_t *gl                 = (gl_core_t*)data;
 
    if (!gl || !draw)
@@ -101,16 +91,16 @@ static void gfx_display_gl_core_draw_pipeline(gfx_display_ctx_draw_t *draw,
    output_size[0]                = (float)video_width;
    output_size[1]                = (float)video_height;
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
       /* Ribbon */
       default:
       case VIDEO_SHADER_MENU:
       case VIDEO_SHADER_MENU_2:
-         ca = gfx_display_get_coords_array();
+         ca                               = &p_disp->dispca;
          draw->coords                     = (struct video_coords*)&ca->coords;
-         draw->pipeline.backend_data      = ubo_scratch_data;
-         draw->pipeline.backend_data_size = 2 * sizeof(float);
+         draw->backend_data               = ubo_scratch_data;
+         draw->backend_data_size          = 2 * sizeof(float);
 
          /* Match UBO layout in shader. */
          yflip = -1.0f;
@@ -122,19 +112,19 @@ static void gfx_display_gl_core_draw_pipeline(gfx_display_ctx_draw_t *draw,
       case VIDEO_SHADER_MENU_3:
       case VIDEO_SHADER_MENU_4:
       case VIDEO_SHADER_MENU_5:
-         draw->pipeline.backend_data      = ubo_scratch_data;
-         draw->pipeline.backend_data_size = sizeof(math_matrix_4x4) 
+         draw->backend_data               = ubo_scratch_data;
+         draw->backend_data_size          = sizeof(math_matrix_4x4) 
             + 4 * sizeof(float);
 
          /* Match UBO layout in shader. */
          memcpy(ubo_scratch_data,
-               gfx_display_gl_core_get_default_mvp(gl),
+               &gl->mvp_no_rot,
                sizeof(math_matrix_4x4));
          memcpy(ubo_scratch_data + sizeof(math_matrix_4x4),
                output_size,
                sizeof(output_size));
 
-         if (draw->pipeline.id == VIDEO_SHADER_MENU_5)
+         if (draw->pipeline_id == VIDEO_SHADER_MENU_5)
             yflip = 1.0f;
 
          memcpy(ubo_scratch_data + sizeof(math_matrix_4x4) 
@@ -160,7 +150,8 @@ static void gfx_display_gl_core_draw(gfx_display_ctx_draw_t *draw,
    GLuint            texture = 0;
    gl_core_t *gl             = (gl_core_t*)data;
    const struct 
-      gl_core_buffer_locations *loc = NULL;
+      gl_core_buffer_locations 
+      *loc                   = NULL;
 
    if (!gl || !draw)
       return;
@@ -173,16 +164,16 @@ static void gfx_display_gl_core_draw(gfx_display_ctx_draw_t *draw,
    if (!vertex)
       vertex          = gfx_display_gl_core_get_default_vertices();
    if (!tex_coord)
-      tex_coord       = gfx_display_gl_core_get_default_tex_coords();
+      tex_coord       = &gl_core_tex_coords[0];
    if (!color)
-      color           = gfx_display_gl_core_get_default_color();
+      color           = &gl_core_colors[0];
 
-   gfx_display_gl_core_viewport(draw, gl);
+   glViewport(draw->x, draw->y, draw->width, draw->height);
 
    glActiveTexture(GL_TEXTURE1);
    glBindTexture(GL_TEXTURE_2D, texture);
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
       case VIDEO_SHADER_MENU:
       case VIDEO_SHADER_MENU_2:
@@ -193,7 +184,7 @@ static void gfx_display_gl_core_draw(gfx_display_ctx_draw_t *draw,
          break;
    }
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
 #ifdef HAVE_SHADERPIPELINE
       case VIDEO_SHADER_MENU:
@@ -224,24 +215,26 @@ static void gfx_display_gl_core_draw(gfx_display_ctx_draw_t *draw,
 
       default:
          glUseProgram(gl->pipelines.alpha_blend);
-         loc = NULL;
          break;
    }
 
-   if (loc && loc->flat_ubo_vertex >= 0)
-      glUniform4fv(loc->flat_ubo_vertex,
-                   (GLsizei)((draw->pipeline.backend_data_size + 15) / 16),
-                   (const GLfloat*)draw->pipeline.backend_data);
+   if (loc)
+   {
+      if (loc->flat_ubo_vertex >= 0)
+         glUniform4fv(loc->flat_ubo_vertex,
+               (GLsizei)((draw->backend_data_size + 15) / 16),
+               (const GLfloat*)draw->backend_data);
 
-   if (loc && loc->flat_ubo_fragment >= 0)
-      glUniform4fv(loc->flat_ubo_fragment,
-                   (GLsizei)((draw->pipeline.backend_data_size + 15) / 16),
-                   (const GLfloat*)draw->pipeline.backend_data);
-
-   if (!loc)
+      if (loc->flat_ubo_fragment >= 0)
+         glUniform4fv(loc->flat_ubo_fragment,
+               (GLsizei)((draw->backend_data_size + 15) / 16),
+               (const GLfloat*)draw->backend_data);
+   }
+   else
    {
       const math_matrix_4x4 *mat = draw->matrix_data
-                     ? (const math_matrix_4x4*)draw->matrix_data : (const math_matrix_4x4*)gfx_display_gl_core_get_default_mvp(gl);
+                     ? (const math_matrix_4x4*)draw->matrix_data 
+                     : (const math_matrix_4x4*)&gl->mvp_no_rot;
       if (gl->pipelines.alpha_blend_loc.flat_ubo_vertex >= 0)
          glUniform4fv(gl->pipelines.alpha_blend_loc.flat_ubo_vertex,
                       4, mat->data);
@@ -283,22 +276,6 @@ static void gfx_display_gl_core_draw(gfx_display_ctx_draw_t *draw,
    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-static void gfx_display_gl_core_restore_clear_color(void)
-{
-   glClearColor(0.0f, 0.0f, 0.0f, 0.00f);
-}
-
-static void gfx_display_gl_core_clear_color(
-      gfx_display_ctx_clearcolor_t *clearcolor,
-      void *data)
-{
-   if (!clearcolor)
-      return;
-
-   glClearColor(clearcolor->r, clearcolor->g, clearcolor->b, clearcolor->a);
-   glClear(GL_COLOR_BUFFER_BIT);
 }
 
 static void gfx_display_gl_core_blend_begin(void *data)
@@ -351,11 +328,8 @@ static void gfx_display_gl_core_scissor_end(
 gfx_display_ctx_driver_t gfx_display_ctx_gl_core = {
    gfx_display_gl_core_draw,
    gfx_display_gl_core_draw_pipeline,
-   gfx_display_gl_core_viewport,
    gfx_display_gl_core_blend_begin,
    gfx_display_gl_core_blend_end,
-   gfx_display_gl_core_restore_clear_color,
-   gfx_display_gl_core_clear_color,
    gfx_display_gl_core_get_default_mvp,
    gfx_display_gl_core_get_default_vertices,
    gfx_display_gl_core_get_default_tex_coords,

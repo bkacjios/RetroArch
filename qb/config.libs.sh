@@ -136,7 +136,7 @@ if [ "$HAVE_EGL" = 'yes' ]; then
    EGL_LIBS="$EGL_LIBS $EXTRA_GL_LIBS"
 fi
 
-check_lib '' SSA -lass ass_library_init
+check_lib '' SSA '-lfribidi -lass' ass_library_init
 check_lib '' SSE '-msse -msse2'
 check_pkgconf EXYNOS libdrm_exynos
 
@@ -243,7 +243,17 @@ check_platform Darwin METAL 'Metal is' true
 if [ "$OS" = 'Darwin' ]; then
    check_lib '' COREAUDIO "-framework AudioUnit" AudioUnitInitialize
    check_lib '' CORETEXT "-framework CoreText" CTFontCreateWithName
-   check_lib '' COCOA "-framework AppKit" NSApplicationMain
+
+   if [ "$HAVE_METAL" = yes ]; then
+      check_lib '' COCOA_METAL "-framework AppKit" NSApplicationMain
+      add_opt OPENGL no
+      add_opt OPENGL1 no
+      add_opt OPENGL_CORE no
+      die : 'Notice: Metal cannot coexist with OpenGL (yet), so disabling OpenGL.'
+   else
+      check_lib '' COCOA "-framework AppKit" NSApplicationMain
+   fi
+
    check_lib '' AVFOUNDATION "-framework AVFoundation"
    check_lib '' CORELOCATION "-framework CoreLocation"
    check_lib '' IOHIDMANAGER "-framework IOKit" IOHIDManagerCreate
@@ -300,34 +310,56 @@ check_enabled FLAC BUILTINFLAC 'builtin flac' 'flac is' true
 
 check_val '' FLAC '-lFLAC' '' flac '' '' false
 
-check_enabled SSL BUILTINMBEDTLS 'builtin mbedtls' 'ssl is' true
 
-if [ "$HAVE_SSL" != 'no' ]; then
-   check_header '' MBEDTLS \
-      mbedtls/config.h \
-      mbedtls/certs.h \
-      mbedtls/debug.h \
-      mbedtls/platform.h \
-      mbedtls/net_sockets.h \
-      mbedtls/ssl.h \
-      mbedtls/ctr_drbg.h \
-      mbedtls/entropy.h
+check_enabled SSL SYSTEMMBEDTLS 'system mbedtls' 'ssl is' false
+check_enabled SSL BUILTINMBEDTLS 'builtin mbedtls' 'ssl is' false
+check_enabled SSL BUILTINBEARSSL 'builtin bearssl' 'ssl is' false
 
-   check_lib '' MBEDTLS -lmbedtls
-   check_lib '' MBEDX509 -lmbedx509
-   check_lib '' MBEDCRYPTO -lmbedcrypto
+if [ "$HAVE_SYSTEMMBEDTLS" = "auto" ]; then SYSTEMMBEDTLS_IS_AUTO=yes; else SYSTEMMBEDTLS_IS_AUTO=no; fi
+check_lib '' SYSTEMMBEDTLS '-lmbedtls -lmbedx509 -lmbedcrypto'
+check_header '' SYSTEMMBEDTLS \
+   mbedtls/config.h \
+   mbedtls/certs.h \
+   mbedtls/debug.h \
+   mbedtls/platform.h \
+   mbedtls/net_sockets.h \
+   mbedtls/ssl.h \
+   mbedtls/ctr_drbg.h \
+   mbedtls/entropy.h
+if [ "$SYSTEMMBEDTLS_IS_AUTO" = "yes" ] && [ "$HAVE_SYSTEMMBEDTLS" = "yes" ]; then HAVE_SYSTEMMBEDTLS=auto; fi
 
-   if [ "$HAVE_MBEDTLS" = 'no' ] ||
-      [ "$HAVE_MBEDX509" = 'no' ] ||
-      [ "$HAVE_MBEDCRYPTO" = 'no' ]; then
-      if [ "$HAVE_BUILTINMBEDTLS" != 'yes' ]; then
-         die : 'Notice: System mbedtls libraries not found, disabling SSL support.'
-         HAVE_SSL=no
-      fi
-   else
-      HAVE_SSL=yes
-   fi
+SSL_BACKEND_CHOSEN=no
+if [ "$HAVE_SYSTEMMBEDTLS" = "yes" ]; then
+  if [ "$SSL_BACKEND_CHOSEN" = "yes" ]; then die 1 "Can't enable multiple SSL backends"; fi
+  SSL_BACKEND_CHOSEN=yes
 fi
+if [ "$HAVE_BUILTINMBEDTLS" = "yes" ]; then
+  if [ "$SSL_BACKEND_CHOSEN" = "yes" ]; then die 1 "Can't enable multiple SSL backends"; fi
+  SSL_BACKEND_CHOSEN=yes
+fi
+if [ "$HAVE_BUILTINBEARSSL" = "yes" ]; then
+  if [ "$SSL_BACKEND_CHOSEN" = "yes" ]; then die 1 "Can't enable multiple SSL backends"; fi
+  SSL_BACKEND_CHOSEN=yes
+fi
+if [ "$SSL_BACKEND_CHOSEN" = "no" ] && [ "$HAVE_SYSTEMMBEDTLS" = "auto" ]; then
+  HAVE_SYSTEMMBEDTLS=yes
+  SSL_BACKEND_CHOSEN=yes
+fi
+if [ "$SSL_BACKEND_CHOSEN" = "no" ] && [ "$HAVE_BUILTINMBEDTLS" = "auto" ]; then
+  HAVE_BUILTINMBEDTLS=yes
+  SSL_BACKEND_CHOSEN=yes
+fi
+if [ "$SSL_BACKEND_CHOSEN" = "no" ] && [ "$HAVE_BUILTINBEARSSL" = "auto" ]; then
+  HAVE_BUILTINBEARSSL=yes
+  SSL_BACKEND_CHOSEN=yes
+fi
+if [ "$HAVE_SYSTEMMBEDTLS" = "auto" ]; then HAVE_SYSTEMMBEDTLS=no; fi
+if [ "$HAVE_BUILTINMBEDTLS" = "auto" ]; then HAVE_BUILTINMBEDTLS=no; fi
+if [ "$HAVE_BUILTINBEARSSL" = "auto" ]; then HAVE_BUILTINBEARSSL=no; fi
+
+if [ "$HAVE_SSL" = "auto" ]; then HAVE_SSL=$SSL_BACKEND_CHOSEN; fi
+if [ "$HAVE_SSL" = "yes" ] && [ "$SSL_BACKEND_CHOSEN" = "no" ]; then die 1 "error: SSL enabled, but all backends disabled"; fi
+
 
 check_enabled THREADS LIBUSB libusb 'Threads are' false
 check_enabled HID LIBUSB libusb 'HID is' false
@@ -466,6 +498,7 @@ check_pkgconf DBUS dbus-1
 check_val '' UDEV "-ludev" '' libudev '' '' false
 check_val '' V4L2 -lv4l2 '' libv4l2 '' '' false
 check_val '' FREETYPE -lfreetype freetype2 freetype2 '' '' false
+check_val '' FONTCONFIG -lfontconfig fontconfig fontconfig '' '' false
 check_val '' X11 -lX11 '' x11 '' '' false
 
 if [ "$HAVE_X11" != 'no' ]; then
@@ -621,6 +654,10 @@ check_enabled 'OPENGL_CORE METAL VULKAN' SPIRV_CROSS SPIRV-Cross '' user
 check_macro NEON __ARM_NEON__
 
 add_define MAKEFILE OS "$OS"
+
+if [ "$ARCHITECTURE_NAME" = 'Power Macintosh' ]; then
+   HAVE_LANGEXTRA='no'
+fi
 
 if [ "$HAVE_DEBUG" = 'yes' ]; then
    add_define MAKEFILE DEBUG 1

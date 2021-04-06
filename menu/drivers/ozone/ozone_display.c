@@ -3,7 +3,7 @@
  *  Copyright (C) 2014-2017 - Jean-André Santoni
  *  Copyright (C) 2016-2019 - Brad Parker
  *  Copyright (C) 2018      - Alfredo Monclús
- *  Copyright (C) 2018      - natinusala
+ *  Copyright (C) 2018-2020 - natinusala
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -30,31 +30,18 @@
 
 #include "../../../input/input_osk.h"
 
-static float ozone_backdrop[16] = {
-      0.00, 0.00, 0.00, 0.75,
-      0.00, 0.00, 0.00, 0.75,
-      0.00, 0.00, 0.00, 0.75,
-      0.00, 0.00, 0.00, 0.75,
-};
-
-static float ozone_osk_backdrop[16] = {
-      0.00, 0.00, 0.00, 0.15,
-      0.00, 0.00, 0.00, 0.15,
-      0.00, 0.00, 0.00, 0.15,
-      0.00, 0.00, 0.00, 0.15,
-};
-
 static void ozone_cursor_animation_cb(void *userdata);
 
-static void ozone_animate_cursor(ozone_handle_t *ozone, float *dst, float *target)
+static void ozone_animate_cursor(ozone_handle_t *ozone,
+      float *dst, float *target)
 {
-   gfx_animation_ctx_entry_t entry;
    int i;
+   gfx_animation_ctx_entry_t entry;
 
    entry.easing_enum = EASING_OUT_QUAD;
-   entry.tag = (uintptr_t) &ozone_default_theme;
-   entry.duration = ANIMATION_CURSOR_PULSE;
-   entry.userdata = ozone;
+   entry.tag         = (uintptr_t)&ozone_default_theme;
+   entry.duration    = ANIMATION_CURSOR_PULSE;
+   entry.userdata    = ozone;
 
    for (i = 0; i < 16; i++)
    {
@@ -75,11 +62,10 @@ static void ozone_animate_cursor(ozone_handle_t *ozone, float *dst, float *targe
 
 static void ozone_cursor_animation_cb(void *userdata)
 {
+   float *target         = NULL;
    ozone_handle_t *ozone = (ozone_handle_t*) userdata;
 
-   float *target = NULL;
-
-   switch (ozone->theme_dynamic.cursor_state)
+   switch (ozone->theme_dynamic_cursor_state)
    {
       case 0:
          target = ozone->theme->cursor_border_1;
@@ -89,13 +75,15 @@ static void ozone_cursor_animation_cb(void *userdata)
          break;
    }
 
-   ozone->theme_dynamic.cursor_state = (ozone->theme_dynamic.cursor_state + 1) % 2;
+   ozone->theme_dynamic_cursor_state = 
+      (ozone->theme_dynamic_cursor_state + 1) % 2;
 
    ozone_animate_cursor(ozone, ozone->theme_dynamic.cursor_border, target);
 }
 
 static void ozone_draw_cursor_slice(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -108,49 +96,62 @@ static void ozone_draw_cursor_slice(
    int slice_y           = (int)y + 8 * scale_factor;
    unsigned slice_new_w  = width + (24 + 1) * scale_factor;
    unsigned slice_new_h  = height + 20 * scale_factor;
+   gfx_display_ctx_driver_t 
+      *dispctx           = p_disp->dispctx;
+   static float 
+      last_alpha         = 0.0f;
 
-   gfx_display_set_alpha(ozone->theme_dynamic.cursor_alpha, alpha);
-   gfx_display_set_alpha(ozone->theme_dynamic.cursor_border, alpha);
+   if (alpha != last_alpha)
+   {
+      gfx_display_set_alpha(ozone->theme_dynamic.cursor_alpha, alpha);
+      gfx_display_set_alpha(ozone->theme_dynamic.cursor_border, alpha);
+      last_alpha = alpha;
+   }
 
-   gfx_display_blend_begin(userdata);
+   if (dispctx && dispctx->blend_begin)
+      dispctx->blend_begin(userdata);
 
    /* Cursor without border */
    gfx_display_draw_texture_slice(
-      userdata,
-      video_width,
-      video_height,
-      slice_x,
-      slice_y,
-      80, 80,
-      slice_new_w,
-      slice_new_h,
-      video_width, video_height,
-      ozone->theme_dynamic.cursor_alpha,
-      20, scale_factor,
-      ozone->theme->textures[OZONE_THEME_TEXTURE_CURSOR_NO_BORDER]
-   );
+         p_disp,
+         userdata,
+         video_width,
+         video_height,
+         slice_x,
+         slice_y,
+         80, 80,
+         slice_new_w,
+         slice_new_h,
+         video_width, video_height,
+         ozone->theme_dynamic.cursor_alpha,
+         20, scale_factor,
+         ozone->theme->textures[OZONE_THEME_TEXTURE_CURSOR_NO_BORDER]
+         );
 
    /* Tainted border */
    gfx_display_draw_texture_slice(
-      userdata,
-      video_width,
-      video_height,
-      slice_x,
-      slice_y,
-      80, 80,
-      slice_new_w,
-      slice_new_h,
-      video_width, video_height,
-      ozone->theme_dynamic.cursor_border,
-      20, scale_factor,
-      ozone->textures[OZONE_TEXTURE_CURSOR_BORDER]
-   );
+         p_disp,
+         userdata,
+         video_width,
+         video_height,
+         slice_x,
+         slice_y,
+         80, 80,
+         slice_new_w,
+         slice_new_h,
+         video_width, video_height,
+         ozone->theme_dynamic.cursor_border,
+         20, scale_factor,
+         ozone->textures[OZONE_TEXTURE_CURSOR_BORDER]
+         );
 
-   gfx_display_blend_end(userdata);
+   if (dispctx && dispctx->blend_end)
+      dispctx->blend_end(userdata);
 }
 
 static void ozone_draw_cursor_fallback(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -158,11 +159,18 @@ static void ozone_draw_cursor_fallback(
       unsigned width, unsigned height,
       size_t y, float alpha)
 {
-   gfx_display_set_alpha(ozone->theme_dynamic.selection_border, alpha);
-   gfx_display_set_alpha(ozone->theme_dynamic.selection, alpha);
+   static float last_alpha           = 0.0f;
+
+   if (alpha != last_alpha)
+   {
+      gfx_display_set_alpha(ozone->theme_dynamic.selection_border, alpha);
+      gfx_display_set_alpha(ozone->theme_dynamic.selection, alpha);
+      last_alpha = alpha;
+   }
 
    /* Fill */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -178,6 +186,7 @@ static void ozone_draw_cursor_fallback(
 
    /* Top */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -191,6 +200,7 @@ static void ozone_draw_cursor_fallback(
 
    /* Bottom */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -204,6 +214,7 @@ static void ozone_draw_cursor_fallback(
 
    /* Left */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -217,6 +228,7 @@ static void ozone_draw_cursor_fallback(
 
    /* Right */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -238,30 +250,20 @@ void ozone_restart_cursor_animation(ozone_handle_t *ozone)
    if (!ozone->has_all_assets)
       return;
 
-   ozone->theme_dynamic.cursor_state = 1;
-   memcpy(ozone->theme_dynamic.cursor_border, ozone->theme->cursor_border_0, sizeof(ozone->theme_dynamic.cursor_border));
+   ozone->theme_dynamic_cursor_state = 1;
+   memcpy(ozone->theme_dynamic.cursor_border,
+         ozone->theme->cursor_border_0,
+         sizeof(ozone->theme_dynamic.cursor_border));
    gfx_animation_kill_by_tag(&tag);
 
-   ozone_animate_cursor(ozone, ozone->theme_dynamic.cursor_border, ozone->theme->cursor_border_1);
-}
-
-void ozone_draw_text(
-      ozone_handle_t *ozone,
-      const char *str, float x,
-      float y,
-      enum text_alignment text_align,
-      unsigned width, unsigned height, ozone_font_data_t *font_data,
-      uint32_t color,
-      bool draw_outside)
-{
-   gfx_display_draw_text(font_data->font, str, x, y,
-         width, height, color, text_align, 1.0f,
-         false,
-         1.0f, draw_outside);
+   ozone_animate_cursor(ozone,
+         ozone->theme_dynamic.cursor_border,
+         ozone->theme->cursor_border_1);
 }
 
 void ozone_draw_cursor(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -269,19 +271,31 @@ void ozone_draw_cursor(
       unsigned width, unsigned height,
       size_t y, float alpha)
 {
+   int new_x    = x_offset;
+   size_t new_y = y;
+
+   /* Apply wiggle animation if needed */
+   if (ozone->cursor_wiggle_state.wiggling)
+      ozone_apply_cursor_wiggle_offset(ozone, &new_x, &new_y);
+
+   /* Draw the cursor */
    if (ozone->has_all_assets)
-      ozone_draw_cursor_slice(ozone, userdata,
+      ozone_draw_cursor_slice(ozone, 
+            p_disp,
+            userdata,
             video_width, video_height,
-            x_offset, width, height, y, alpha);
+            new_x, width, height, new_y, alpha);
    else
       ozone_draw_cursor_fallback(ozone,
+            p_disp,
             userdata,
             video_width,
             video_height,
-            x_offset, width, height, y, alpha);
+            new_x, width, height, new_y, alpha);
 }
 
 void ozone_draw_icon(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -297,6 +311,8 @@ void ozone_draw_icon(
    gfx_display_ctx_draw_t draw;
    struct video_coords coords;
    math_matrix_4x4 mymat;
+   gfx_display_ctx_driver_t 
+      *dispctx              = p_disp->dispctx;
 
    rotate_draw.matrix       = &mymat;
    rotate_draw.rotation     = rotation;
@@ -305,13 +321,13 @@ void ozone_draw_icon(
    rotate_draw.scale_z      = 1;
    rotate_draw.scale_enable = true;
 
-   gfx_display_rotate_z(&rotate_draw, userdata);
+   gfx_display_rotate_z(p_disp, &rotate_draw, userdata);
 
    coords.vertices      = 4;
    coords.vertex        = NULL;
    coords.tex_coord     = NULL;
    coords.lut_tex_coord = NULL;
-   coords.color         = color ? (const float*)color : ozone_pure_white;
+   coords.color         = (const float*)color;
 
    draw.x               = x;
    draw.y               = height - y - icon_height;
@@ -323,10 +339,10 @@ void ozone_draw_icon(
    draw.matrix_data     = &mymat;
    draw.texture         = texture;
    draw.prim_type       = GFX_DISPLAY_PRIM_TRIANGLESTRIP;
-   draw.pipeline.id     = 0;
+   draw.pipeline_id     = 0;
 
-   gfx_display_draw(&draw, userdata,
-         video_width, video_height);
+   if (draw.height > 0 && draw.width > 0)
+      dispctx->draw(&draw, userdata, video_width, video_height);
 }
 
 void ozone_draw_backdrop(
@@ -335,10 +351,25 @@ void ozone_draw_backdrop(
       unsigned video_height,
       float alpha)
 {
+   static float ozone_backdrop[16] = {
+      0.00, 0.00, 0.00, 0.75,
+      0.00, 0.00, 0.00, 0.75,
+      0.00, 0.00, 0.00, 0.75,
+      0.00, 0.00, 0.00, 0.75,
+   };
+   static float last_alpha           = 0.0f;
+   gfx_display_t *p_disp             = disp_get_ptr();
+
    /* TODO: Replace this backdrop by a blur shader 
     * on the whole screen if available */
-   gfx_display_set_alpha(ozone_backdrop, alpha);
+   if (alpha != last_alpha)
+   {
+      gfx_display_set_alpha(ozone_backdrop, alpha);
+      last_alpha = alpha;
+   }
+
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -358,30 +389,36 @@ void ozone_draw_osk(ozone_handle_t *ozone,
       const char *label, const char *str)
 {
    unsigned i;
-   const char *text;
    char message[2048];
-   unsigned text_color;
-   struct string_list *list= NULL;
-
-   float scale_factor      = ozone->last_scale_factor;
-   unsigned margin         = 75 * scale_factor;
-   unsigned padding        = 10 * scale_factor;
-   unsigned bottom_end     = video_height / 2;
-   unsigned y_offset       = 0;
-   bool draw_placeholder   = string_is_empty(str);
-
-   retro_time_t current_time      = menu_driver_get_current_time();
+   gfx_display_t *p_disp               = disp_get_ptr();
+   const char *text                    = str;
+   unsigned text_color                 = 0xffffffff;
+   static float ozone_osk_backdrop[16] = {
+      0.00, 0.00, 0.00, 0.15,
+      0.00, 0.00, 0.00, 0.15,
+      0.00, 0.00, 0.00, 0.15,
+      0.00, 0.00, 0.00, 0.15,
+   };
    static retro_time_t last_time  = 0;
+   struct string_list list        = {0};
+   float scale_factor             = ozone->last_scale_factor;
+   unsigned margin                = 75 * scale_factor;
+   unsigned padding               = 10 * scale_factor;
+   unsigned bottom_end            = video_height / 2;
+   unsigned y_offset              = 0;
+   bool draw_placeholder          = string_is_empty(str);
+   retro_time_t current_time      = menu_driver_get_current_time();
 
    if (current_time - last_time >= INTERVAL_OSK_CURSOR)
    {
-      ozone->osk_cursor = !ozone->osk_cursor;
-      last_time = current_time;
+      ozone->osk_cursor           = !ozone->osk_cursor;
+      last_time                   = current_time;
    }
 
    /* Border */
    /* Top */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -395,6 +432,7 @@ void ozone_draw_osk(ozone_handle_t *ozone,
 
    /* Bottom */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -408,6 +446,7 @@ void ozone_draw_osk(ozone_handle_t *ozone,
 
    /* Left */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -421,6 +460,7 @@ void ozone_draw_osk(ozone_handle_t *ozone,
 
    /* Right */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -435,6 +475,7 @@ void ozone_draw_osk(ozone_handle_t *ozone,
    /* Backdrop */
    /* TODO: Remove the backdrop if blur shader is available */
    gfx_display_draw_quad(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -447,12 +488,7 @@ void ozone_draw_osk(ozone_handle_t *ozone,
          ozone_osk_backdrop);
 
    /* Placeholder & text*/
-   if (!draw_placeholder)
-   {
-      text        = str;
-      text_color  = 0xffffffff;
-   }
-   else
+   if (draw_placeholder)
    {
       text        = label;
       text_color  = ozone_theme_light.text_sublabel_rgba;
@@ -460,44 +496,66 @@ void ozone_draw_osk(ozone_handle_t *ozone,
 
    word_wrap(message, text, (video_width - margin*2 - padding*2) / ozone->fonts.entries_label.glyph_width, true, 0);
 
-   list = string_split(message, "\n");
+   string_list_initialize(&list);
+   string_split_noalloc(&list, message, "\n");
 
-   for (i = 0; i < list->size; i++)
+   for (i = 0; i < list.size; i++)
    {
-      const char *msg = list->elems[i].data;
+      const char *msg = list.elems[i].data;
 
-      ozone_draw_text(ozone, msg,
-            margin + padding * 2,
-            margin + padding + ozone->fonts.entries_label.line_height + y_offset,
-            TEXT_ALIGN_LEFT, video_width, video_height, &ozone->fonts.entries_label, text_color, false);
+      gfx_display_draw_text(
+            ozone->fonts.entries_label.font,
+            msg,
+            margin + padding * 2,       /* x */
+            margin + padding + 
+            ozone->fonts.entries_label.line_height 
+            + y_offset,                /* y */
+            video_width, video_height,
+            text_color,
+            TEXT_ALIGN_LEFT,
+            1.0f,
+            false,
+            1.0f,
+            false);
 
       /* Cursor */
-      if (i == list->size - 1)
+      if (i == list.size - 1)
       {
          if (ozone->osk_cursor)
          {
-            unsigned cursor_x = draw_placeholder ? 0 : font_driver_get_message_width(ozone->fonts.entries_label.font, msg, (unsigned)strlen(msg), 1);
+            unsigned cursor_x = draw_placeholder 
+               ? 0 
+               : font_driver_get_message_width(
+                     ozone->fonts.entries_label.font, msg,
+                     (unsigned)strlen(msg), 1);
             gfx_display_draw_quad(
+                  p_disp,
                   userdata,
                   video_width,
                   video_height,
-                  margin + padding*2 + cursor_x,
-                  margin + padding + y_offset + ozone->fonts.entries_label.line_height - ozone->fonts.entries_label.line_ascender + ozone->dimensions.spacer_3px,
+                    margin 
+                  + padding * 2 
+                  + cursor_x,
+                    margin 
+                  + padding 
+                  + y_offset 
+                  + ozone->fonts.entries_label.line_height 
+                  - ozone->fonts.entries_label.line_ascender 
+                  + ozone->dimensions.spacer_3px,
                   ozone->dimensions.spacer_1px,
                   ozone->fonts.entries_label.line_ascender,
                   video_width,
                   video_height,
-                  ozone_pure_white);
+                  ozone->pure_white);
          }
       }
       else
-      {
          y_offset += 25 * scale_factor;
-      }
    }
 
    /* Keyboard */
    gfx_display_draw_keyboard(
+         p_disp,
          userdata,
          video_width,
          video_height,
@@ -507,38 +565,40 @@ void ozone_draw_osk(ozone_handle_t *ozone,
          input_event_get_osk_ptr(),
          ozone->theme->text_rgba);
 
-   string_list_free(list);
+   string_list_deinitialize(&list);
 }
 
 void ozone_draw_messagebox(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
       const char *message)
 {
    unsigned i, y_position;
+   char wrapped_message[MENU_SUBLABEL_MAX_LENGTH];
    int x, y, longest_width  = 0;
    int usable_width         = 0;
-   struct string_list *list = NULL;
+   struct string_list list  = {0};
    float scale_factor       = 0.0f;
    unsigned width           = video_width;
    unsigned height          = video_height;
-   char wrapped_message[MENU_SUBLABEL_MAX_LENGTH];
+   gfx_display_ctx_driver_t 
+      *dispctx              = p_disp->dispctx;
 
-   wrapped_message[0] = '\0';
+   wrapped_message[0]       = '\0';
 
    /* Sanity check */
    if (string_is_empty(message) ||
-       !ozone ||
        !ozone->fonts.footer.font)
-      goto end;
+      return;
 
    scale_factor = ozone->last_scale_factor;
    usable_width = (int)width - (48 * 8 * scale_factor);
 
    if (usable_width < 1)
-      goto end;
+      return;
 
    /* Split message into lines */
    word_wrap(
@@ -546,36 +606,42 @@ void ozone_draw_messagebox(
          usable_width / (int)ozone->fonts.footer.glyph_width,
          true, 0);
 
-   list = string_split(wrapped_message, "\n");
-
-   if (!list || list->elems == 0)
-      goto end;
+   string_list_initialize(&list);
+   if (
+            !string_split_noalloc(&list, wrapped_message, "\n")
+         || list.elems == 0)
+   {
+      string_list_deinitialize(&list);
+      return;
+   }
 
    y_position       = height / 2;
    if (menu_input_dialog_get_display_kb())
       y_position    = height / 4;
 
    x                = width  / 2;
-   y                = y_position - (list->size * ozone->fonts.footer.line_height) / 2;
+   y                = y_position - (list.size 
+         * ozone->fonts.footer.line_height) / 2;
 
    /* find the longest line width */
-   for (i = 0; i < list->size; i++)
+   for (i = 0; i < list.size; i++)
    {
-      const char *msg  = list->elems[i].data;
+      const char *msg  = list.elems[i].data;
 
       if (!string_is_empty(msg))
       {
          int width = font_driver_get_message_width(
                ozone->fonts.footer.font, msg, (unsigned)strlen(msg), 1);
 
-         longest_width = (width > longest_width) ?
-               width : longest_width;
+         if (width > longest_width)
+            longest_width = width;
       }
    }
 
    gfx_display_set_alpha(ozone->theme_dynamic.message_background, ozone->animations.messagebox_alpha);
 
-   gfx_display_blend_begin(userdata);
+   if (dispctx && dispctx->blend_begin)
+      dispctx->blend_begin(userdata);
 
    /* Avoid drawing a black box if there's no assets */
    if (ozone->has_all_assets)
@@ -586,12 +652,15 @@ void ozone_draw_messagebox(
        *   is quite 'loose', and depends upon source image
        *   size, draw size and scale factor... */
       unsigned slice_new_w = longest_width + 48 * 2 * scale_factor;
-      unsigned slice_new_h = ozone->fonts.footer.line_height * (list->size + 2);
+      unsigned slice_new_h = ozone->fonts.footer.line_height * (list.size + 2);
       int slice_x          = x - longest_width/2 - 48 * scale_factor;
       int slice_y          = y - ozone->fonts.footer.line_height +
-            ((slice_new_h >= 256) ? (16.0f * scale_factor) : (16.0f * ((float)slice_new_h / 256.0f)));
+            ((slice_new_h >= 256) 
+             ? (16.0f * scale_factor) 
+             : (16.0f * ((float)slice_new_h / 256.0f)));
 
       gfx_display_draw_texture_slice(
+            p_disp,
             userdata,
             video_width,
             video_height,
@@ -607,26 +676,28 @@ void ozone_draw_messagebox(
             );
    }
 
-   for (i = 0; i < list->size; i++)
+   for (i = 0; i < list.size; i++)
    {
-      const char *msg = list->elems[i].data;
+      const char *msg = list.elems[i].data;
 
       if (msg)
-         ozone_draw_text(ozone,
-            msg,
-            x - longest_width/2.0,
-            y + (i * ozone->fonts.footer.line_height) + ozone->fonts.footer.line_ascender,
-            TEXT_ALIGN_LEFT,
-            width, height,
-            &ozone->fonts.footer,
-            COLOR_TEXT_ALPHA(ozone->theme->text_rgba, (uint32_t)(ozone->animations.messagebox_alpha*255.0f)),
-            false
-         );
+         gfx_display_draw_text(
+               ozone->fonts.footer.font,
+               msg,
+               x - longest_width/2.0,
+               y + (i * ozone->fonts.footer.line_height) + 
+               ozone->fonts.footer.line_ascender,
+               width,
+               height,
+               COLOR_TEXT_ALPHA(ozone->theme->text_rgba, (uint32_t)(ozone->animations.messagebox_alpha*255.0f)),
+               TEXT_ALIGN_LEFT,
+               1.0f,
+               false,
+               1.0f,
+               false);
    }
 
-end:
-   if (list)
-      string_list_free(list);
+   string_list_deinitialize(&list);
 }
 
 void ozone_draw_fullscreen_thumbnails(
@@ -635,6 +706,8 @@ void ozone_draw_fullscreen_thumbnails(
       unsigned video_width,
       unsigned video_height)
 {
+   gfx_display_t *p_disp = disp_get_ptr();
+
    /* Check whether fullscreen thumbnails are visible */
    if (ozone->animations.fullscreen_thumbnail_alpha > 0.0f)
    {
@@ -656,7 +729,7 @@ void ozone_draw_fullscreen_thumbnails(
       float left_thumbnail_draw_width   = 0.0f;
       float left_thumbnail_draw_height  = 0.0f;
       float background_alpha            = 0.85f;
-      float background_color[16]        = {
+      static float background_color[16] = {
          0.0f, 0.0f, 0.0f, 1.0f,
          0.0f, 0.0f, 0.0f, 1.0f,
          0.0f, 0.0f, 0.0f, 1.0f,
@@ -807,6 +880,7 @@ void ozone_draw_fullscreen_thumbnails(
 
       /* Darken background */
       gfx_display_draw_quad(
+            p_disp,
             userdata,
             video_width,
             video_height,
@@ -820,6 +894,7 @@ void ozone_draw_fullscreen_thumbnails(
 
       /* Draw full-width separators */
       gfx_display_draw_quad(
+            p_disp,
             userdata,
             video_width,
             video_height,
@@ -832,6 +907,7 @@ void ozone_draw_fullscreen_thumbnails(
             separator_color);
 
       gfx_display_draw_quad(
+            p_disp,
             userdata,
             video_width,
             video_height,
@@ -850,6 +926,7 @@ void ozone_draw_fullscreen_thumbnails(
       {
          /* Background */
          gfx_display_draw_quad(
+               p_disp,
                userdata,
                video_width,
                video_height,
@@ -884,6 +961,7 @@ void ozone_draw_fullscreen_thumbnails(
       {
          /* Background */
          gfx_display_draw_quad(
+               p_disp,
                userdata,
                video_width,
                video_height,

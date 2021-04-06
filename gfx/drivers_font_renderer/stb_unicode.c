@@ -18,6 +18,7 @@
 
 #include <file/file_path.h>
 #include <streams/file_stream.h>
+#include <string/stdstring.h>
 #include <retro_miscellaneous.h>
 
 #ifdef WIIU
@@ -44,26 +45,24 @@
 
 typedef struct stb_unicode_atlas_slot
 {
-   struct font_glyph glyph;
+   struct stb_unicode_atlas_slot* next;
+   struct font_glyph glyph;      /* unsigned alignment */
    unsigned charcode;
    unsigned last_used;
-   struct stb_unicode_atlas_slot* next;
 }stb_unicode_atlas_slot_t;
 
 typedef struct
 {
    uint8_t *font_data;
-   stbtt_fontinfo info;
-
+   struct font_atlas atlas;               /* ptr alignment */
+   stb_unicode_atlas_slot_t* uc_map[0x100];
+   stb_unicode_atlas_slot_t atlas_slots[STB_UNICODE_ATLAS_SIZE];
+   stbtt_fontinfo info;                   /* ptr alignment */
    int max_glyph_width;
    int max_glyph_height;
-   float scale_factor;
-   struct font_line_metrics line_metrics;
-
-   struct font_atlas atlas;
-   stb_unicode_atlas_slot_t atlas_slots[STB_UNICODE_ATLAS_SIZE];
-   stb_unicode_atlas_slot_t* uc_map[0x100];
    unsigned usage_counter;
+   float scale_factor;
+   struct font_line_metrics line_metrics; /* float alignment */
 } stb_unicode_font_renderer_t;
 
 static struct font_atlas *font_renderer_stb_unicode_get_atlas(void *data)
@@ -222,7 +221,7 @@ static bool font_renderer_stb_unicode_create_atlas(
 
    for (i = 0; i < 256; i++)
    {
-      if (isalnum(i))
+      if (ISALNUM(i))
          font_renderer_stb_unicode_get_glyph(self, i);
    }
 

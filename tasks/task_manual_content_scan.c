@@ -53,13 +53,13 @@ enum manual_scan_status
 typedef struct manual_scan_handle
 {
    manual_content_scan_task_config_t *task_config;
-   playlist_config_t playlist_config;
    playlist_t *playlist;
    struct string_list *content_list;
    logiqx_dat_t *dat_file;
+   struct string_list *m3u_list;
+   playlist_config_t playlist_config; /* size_t alignment */
    size_t list_size;
    size_t list_index;
-   struct string_list *m3u_list;
    size_t m3u_index;
    enum manual_scan_status status;
 } manual_scan_handle_t;
@@ -339,7 +339,7 @@ static void task_manual_content_scan_handler(retro_task_t *task)
                task_set_progress(task, (manual_scan->m3u_index * 100) / manual_scan->m3u_list->size);
 
                /* Load M3U file */
-               m3u_file = m3u_file_init(m3u_path, M3U_FILE_SIZE);
+               m3u_file = m3u_file_init(m3u_path);
 
                if (m3u_file)
                {

@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2013-2015 - pinumbernumber
- *  Copyright (C) 2011-2017 - Daniel De Matteis
+ *  Copyright (C) 2011-2020 - Daniel De Matteis
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -47,6 +47,7 @@
 #include "../../tasks/tasks_internal.h"
 #include "../input_driver.h"
 
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 #include "dinput_joypad.h"
@@ -83,7 +84,11 @@ static bool g_xinput_guide_button_supported = false;
 static unsigned g_xinput_num_buttons        = 0;
 static XInputSetState_t g_XInputSetState;
 static XInputGetStateEx_t g_XInputGetStateEx;
+#ifdef _XBOX1
+static XINPUT_FEEDBACK     g_xinput_rumble_states[4];
+#else
 static XINPUT_VIBRATION    g_xinput_rumble_states[4];
+#endif
 static xinput_joypad_state g_xinput_states[4];
 
 /* Buttons are provided by XInput as bits of a uint16.
@@ -219,15 +224,9 @@ static bool dinput_joypad_get_vidpid_from_xinput_index(
       /* Found XInput pad? */
       if (index == g_xinput_pad_indexes[i])
       {
-         if (vid)
-            *vid = g_pads[i].vid;
-
-         if (pid)
-            *pid = g_pads[i].pid;
-
-         if (dinput_index)
-            *dinput_index = i;
-
+         *vid          = g_pads[i].vid;
+         *pid          = g_pads[i].pid;
+         *dinput_index = i;
          return true;
       }
    }
@@ -342,7 +341,7 @@ static const char *xinput_joypad_name(unsigned pad)
    return dinput_joypad_name(pad);
 }
 
-static bool xinput_joypad_init(void *data)
+static void *xinput_joypad_init(void *data)
 {
    unsigned i, j;
    XINPUT_STATE dummy_state;
@@ -470,12 +469,14 @@ succeeded:
 #endif
    /* non-hat button. */
    g_xinput_num_buttons = g_xinput_guide_button_supported ? 11 : 10;
-   return true;
+
+   return (void*)-1;
 
 error:
    /* non-hat button. */
    g_xinput_num_buttons = g_xinput_guide_button_supported ? 11 : 10;
-   return false;
+   
+   return NULL;
 }
 
 static bool xinput_joypad_query_pad(unsigned pad)
@@ -519,23 +520,25 @@ static void xinput_joypad_destroy(void)
 
 static int16_t xinput_joypad_button(unsigned port, uint16_t joykey)
 {
-   int xuser         = PAD_INDEX_TO_XUSER_INDEX(port);
-   uint16_t btn_word = 0;
+   int xuser                  = PAD_INDEX_TO_XUSER_INDEX(port);
+   xinput_joypad_state *state = &g_xinput_states[xuser];
+   uint16_t btn_word          = 0;
    if (xuser == -1)
       return dinput_joypad_button(port, joykey);
-   if (!(g_xinput_states[xuser].connected))
+   if (!state->connected)
       return 0;
-   btn_word          = g_xinput_states[xuser].xstate.Gamepad.wButtons;
+   btn_word          = state->xstate.Gamepad.wButtons;
    return xinput_joypad_button_state(xuser, btn_word, port, joykey);
 }
 
 static int16_t xinput_joypad_axis(unsigned port, uint32_t joyaxis)
 {
-   int xuser           = PAD_INDEX_TO_XUSER_INDEX(port);
-   XINPUT_GAMEPAD *pad = &(g_xinput_states[xuser].xstate.Gamepad);
+   int xuser                  = PAD_INDEX_TO_XUSER_INDEX(port);
+   xinput_joypad_state *state = &g_xinput_states[xuser];
+   XINPUT_GAMEPAD *pad        = &state->xstate.Gamepad;
    if (xuser == -1)
       return dinput_joypad_axis(port, joyaxis);
-   if (!(g_xinput_states[xuser].connected))
+   if (!state->connected)
       return 0;
    return xinput_joypad_axis_state(pad, port, joyaxis);
 }
@@ -547,15 +550,16 @@ static int16_t xinput_joypad_state_func(
 {
    unsigned i;
    uint16_t btn_word;
-   int16_t ret         = 0;
-   uint16_t port_idx   = joypad_info->joy_idx;
-   int xuser           = PAD_INDEX_TO_XUSER_INDEX(port_idx);
-   XINPUT_GAMEPAD *pad = &(g_xinput_states[xuser].xstate.Gamepad);
+   int16_t ret                = 0;
+   uint16_t port_idx          = joypad_info->joy_idx;
+   int xuser                  = PAD_INDEX_TO_XUSER_INDEX(port_idx);
+   xinput_joypad_state *state = &g_xinput_states[xuser];
+   XINPUT_GAMEPAD *pad        = &state->xstate.Gamepad;
    if (xuser == -1)
       return dinput_joypad_state(joypad_info, binds, port_idx);
-   if (!(g_xinput_states[xuser].connected))
+   if (!state->connected)
       return 0;
-   btn_word            = g_xinput_states[xuser].xstate.Gamepad.wButtons;
+   btn_word                   = state->xstate.Gamepad.wButtons;
 
    for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
    {
@@ -584,12 +588,13 @@ static void xinput_joypad_poll(void)
 
    for (i = 0; i < 4; ++i)
    {
-      DWORD status       = g_XInputGetStateEx(i, &(g_xinput_states[i].xstate));
-      bool success       = status == ERROR_SUCCESS;
-      bool new_connected = status != ERROR_DEVICE_NOT_CONNECTED;
-      if (new_connected != g_xinput_states[i].connected)
+      xinput_joypad_state *state = &g_xinput_states[i];
+      DWORD status               = g_XInputGetStateEx(i, &state->xstate);
+      bool success               = (status == ERROR_SUCCESS);
+      bool new_connected         = (status != ERROR_DEVICE_NOT_CONNECTED);
+      if (new_connected != state->connected)
       {
-         g_xinput_states[i].connected = new_connected;
+         state->connected = new_connected;
          if (!success)
             input_autoconfigure_disconnect(i, xinput_joypad_name(i));
       }
@@ -601,9 +606,7 @@ static void xinput_joypad_poll(void)
       HRESULT ret;
       struct dinput_joypad_data *pad  = &g_pads[i];
       bool                    polled  = g_xinput_pad_indexes[i] < 0;
-      if (!polled)
-         continue;
-      if (!pad || !pad->joypad)
+      if (!polled || !pad || !pad->joypad)
          continue;
 
       pad->joy_state.lX               = 0;
@@ -671,7 +674,7 @@ static bool xinput_joypad_rumble(unsigned pad,
 
    /* Consider the low frequency (left) motor the "strong" one. */
    if (effect == RETRO_RUMBLE_STRONG)
-      g_xinput_rumble_states[xuser].wLeftMotorSpeed = strength;
+      g_xinput_rumble_states[xuser].wLeftMotorSpeed  = strength;
    else if (effect == RETRO_RUMBLE_WEAK)
       g_xinput_rumble_states[xuser].wRightMotorSpeed = strength;
 

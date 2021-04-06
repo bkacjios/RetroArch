@@ -151,7 +151,7 @@ static void libusb_hid_device_add_autodetect(unsigned idx,
    input_autoconfigure_connect(
          device_name,
          NULL,
-         driver_name,
+         "hid",
          idx,
          dev_vid,
          dev_pid
@@ -177,7 +177,7 @@ static void libusb_get_description(struct libusb_device *device,
    {
       const struct libusb_interface *inter = &config->interface[i];
 
-      for(j = 0; j < inter->num_altsetting; j++)
+      for (j = 0; j < inter->num_altsetting; j++)
       {
          const struct libusb_interface_descriptor *interdesc =
             &inter->altsetting[j];
@@ -188,7 +188,7 @@ static void libusb_get_description(struct libusb_device *device,
          {
             adapter->interface_number = (int)interdesc->bInterfaceNumber;
 
-            for(k = 0; k < (int)interdesc->bNumEndpoints; k++)
+            for (k = 0; k < (int)interdesc->bNumEndpoints; k++)
             {
                const struct libusb_endpoint_descriptor *epdesc =
                   &interdesc->endpoint[k];

@@ -25,7 +25,7 @@ static const char *android_joypad_name(unsigned pad)
    return input_config_get_device_name(pad);
 }
 
-static bool android_joypad_init(void *data) { return true; }
+static void *android_joypad_init(void *data) { return (void*)-1; }
 
 static int16_t android_joypad_button_state(
       struct android_app *android_app,
@@ -45,11 +45,11 @@ static int16_t android_joypad_button_state(
          case HAT_LEFT_MASK:
             return (android_app->hat_state[port][0] == -1);
          case HAT_RIGHT_MASK:
-            return (android_app->hat_state[port][0] == 1);
+            return (android_app->hat_state[port][0] ==  1);
          case HAT_UP_MASK:
             return (android_app->hat_state[port][1] == -1);
          case HAT_DOWN_MASK:
-            return (android_app->hat_state[port][1] == 1);
+            return (android_app->hat_state[port][1] ==  1);
          default:
             break;
       }
@@ -153,6 +153,94 @@ static void android_joypad_destroy(void)
       for (j = 0; j < MAX_AXIS; j++)
          android_app->analog_state[i][j] = 0;
    }
+
+   for (i = 0; i < MAX_USERS; i++)
+   {
+      android_app->rumble_last_strength_strong[i] = 0;
+      android_app->rumble_last_strength_weak  [i] = 0;
+      android_app->rumble_last_strength       [i] = 0;
+      android_app->id                         [i] = 0;
+   }
+}
+
+static void android_input_set_rumble_internal(
+      uint16_t strength,
+      uint16_t *last_strength_strong,
+      uint16_t *last_strength_weak,
+      uint16_t *last_strength,
+      int8_t   id,
+      enum retro_rumble_effect effect
+      )
+{
+   JNIEnv *env           = (JNIEnv*)jni_thread_getenv();
+   uint16_t new_strength = 0;
+
+   if (!env)
+      return;
+
+   if (effect == RETRO_RUMBLE_STRONG)
+   {
+      new_strength          = strength | *last_strength_weak;
+      *last_strength_strong = strength;
+   }
+   else if (effect == RETRO_RUMBLE_WEAK)
+   {
+      new_strength         = strength | *last_strength_strong;
+      *last_strength_weak  = strength;
+   }
+
+   if (new_strength != *last_strength)
+   {
+      /* trying to send this value as a JNI param without 
+       * storing it first was causing 0 to be seen on the other side ?? */
+      int strength_final   = (255.0f / 65535.0f) * (float)new_strength;
+
+      CALL_VOID_METHOD_PARAM(env, g_android->activity->clazz,
+            g_android->doVibrate, (jint)id, (jint)RETRO_RUMBLE_STRONG, (jint)strength_final, (jint)0);
+
+      *last_strength = new_strength;
+   }
+}
+
+static bool android_joypad_rumble(unsigned port,
+      enum retro_rumble_effect type, uint16_t strength)
+{
+   settings_t *settings            = config_get_ptr();
+   struct android_app *android_app = (struct android_app*)g_android;
+   bool enable_device_vibration    = settings->bools.enable_device_vibration;
+
+   if (!android_app || !android_app->doVibrate)
+      return false;
+
+   if (enable_device_vibration)
+   {
+      static uint16_t last_strength_strong = 0;
+      static uint16_t last_strength_weak   = 0;
+      static uint16_t last_strength        = 0;
+
+      if (port != 0)
+         return false;
+
+      android_input_set_rumble_internal(
+            strength,
+            &last_strength_strong,
+            &last_strength_weak,
+            &last_strength,
+            -1,
+            type);
+   }
+   else
+   {
+      android_input_set_rumble_internal(
+            strength,
+            &android_app->rumble_last_strength_strong[port],
+            &android_app->rumble_last_strength_weak[port],
+            &android_app->rumble_last_strength[port],
+            android_app->id[port],
+            type);
+   }
+
+   return true;
 }
 
 input_device_driver_t android_joypad = {
@@ -164,7 +252,7 @@ input_device_driver_t android_joypad = {
    NULL,
    android_joypad_axis,
    android_joypad_poll,
-   NULL,
+   android_joypad_rumble,
    android_joypad_name,
    "android",
 };

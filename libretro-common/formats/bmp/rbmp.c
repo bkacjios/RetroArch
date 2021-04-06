@@ -41,17 +41,15 @@
 
 typedef struct
 {
-   uint32_t img_x;
-   uint32_t img_y;
-   int img_n;
-   int img_out_n;
-
-   int buflen;
-   unsigned char buffer_start[128];
-
    unsigned char *img_buffer;
    unsigned char *img_buffer_end;
    unsigned char *img_buffer_original;
+   int img_n;
+   int img_out_n;
+   int buflen;
+   uint32_t img_x;
+   uint32_t img_y;
+   unsigned char buffer_start[128];
 } rbmp_context;
 
 struct rbmp
@@ -107,40 +105,40 @@ static unsigned char *rbmp_convert_format(
       switch (((img_n)*8+(req_comp)))
       {
          case 10:
-            for(i = x-1; i >= 0; --i, src += 1, dest += 2)
+            for (i = x-1; i >= 0; --i, src += 1, dest += 2)
             {
                dest[0]=src[0];
                dest[1]=255;
             }
             break;
          case 11:
-            for(i = x-1; i >= 0; --i, src += 1, dest += 3)
+            for (i = x-1; i >= 0; --i, src += 1, dest += 3)
                dest[0]=dest[1]=dest[2]=src[0];
             break;
          case 12:
-            for(i = x-1; i >= 0; --i, src += 1, dest += 4)
+            for (i = x-1; i >= 0; --i, src += 1, dest += 4)
             {
                dest[0]=dest[1]=dest[2]=src[0];
                dest[3]=255;
             }
             break;
          case 17:
-            for(i = x-1; i >= 0; --i, src += 2, dest += 1)
+            for (i = x-1; i >= 0; --i, src += 2, dest += 1)
                dest[0]=src[0];
             break;
          case 19:
-            for(i = x-1; i >= 0; --i, src += 2, dest += 3)
+            for (i = x-1; i >= 0; --i, src += 2, dest += 3)
                dest[0]=dest[1]=dest[2]=src[0];
             break;
          case 20:
-            for(i = x-1; i >= 0; --i, src += 2, dest += 4)
+            for (i = x-1; i >= 0; --i, src += 2, dest += 4)
             {
                dest[0]=dest[1]=dest[2]=src[0];
                dest[3]=src[1];
             }
             break;
          case 28:
-            for(i = x-1; i >= 0; --i, src += 3, dest += 4)
+            for (i = x-1; i >= 0; --i, src += 3, dest += 4)
             {
                dest[0]=src[0];
                dest[1]=src[1];
@@ -149,29 +147,29 @@ static unsigned char *rbmp_convert_format(
             }
             break;
          case 25:
-            for(i = x-1; i >= 0; --i, src += 3, dest += 1)
+            for (i = x-1; i >= 0; --i, src += 3, dest += 1)
                dest[0] = RBMP_COMPUTE_Y(src[0],src[1],src[2]);
             break;
          case 26:
-            for(i = x-1; i >= 0; --i, src += 3, dest += 2)
+            for (i = x-1; i >= 0; --i, src += 3, dest += 2)
             {
                dest[0] = RBMP_COMPUTE_Y(src[0],src[1],src[2]);
                dest[1] = 255;
             }
             break;
          case 33:
-            for(i = x-1; i >= 0; --i, src += 4, dest += 1)
+            for (i = x-1; i >= 0; --i, src += 4, dest += 1)
                dest[0] = RBMP_COMPUTE_Y(src[0],src[1],src[2]);
             break;
          case 34:
-            for(i = x-1; i >= 0; --i, src += 4, dest += 2)
+            for (i = x-1; i >= 0; --i, src += 4, dest += 2)
             {
                dest[0] = RBMP_COMPUTE_Y(src[0],src[1],src[2]);
                dest[1] = src[3];
             }
             break;
          case 35:
-            for(i = x-1; i >= 0; --i, src += 4, dest += 3)
+            for (i = x-1; i >= 0; --i, src += 4, dest += 3)
             {
                dest[0]=src[0];
                dest[1]=src[1];

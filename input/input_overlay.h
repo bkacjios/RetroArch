@@ -105,8 +105,10 @@ enum overlay_orientation
 
 struct overlay
 {
-   bool full_screen;
-   bool block_scale;
+   struct overlay_desc *descs;
+   struct texture_image *load_images;
+
+   struct texture_image image;
 
    unsigned load_images_size;
    unsigned id;
@@ -117,21 +119,19 @@ struct overlay
 
    float mod_x, mod_y, mod_w, mod_h;
    float x, y, w, h;
-   float scale;
    float center_x, center_y;
-
-   struct overlay_desc *descs;
-   struct texture_image *load_images;
-
-   struct texture_image image;
-
-   char name[64];
+   float aspect_ratio;
 
    struct
    {
-      bool normalized;
       float alpha_mod;
       float range_mod;
+
+      struct
+      {
+         unsigned size;
+         char key[64];
+      } descs;
 
       struct
       {
@@ -150,18 +150,21 @@ struct overlay
          char key[64];
       } rect;
 
-      struct
-      {
-         char key[64];
-         unsigned size;
-      } descs;
-
+      bool normalized;
    } config;
 
+   bool full_screen;
+   bool block_scale;
+   bool block_x_separation;
+   bool block_y_separation;
+
+   char name[64];
 };
 
 struct overlay_desc
 {
+   struct texture_image image;
+
    enum overlay_hitbox hitbox;
    enum overlay_type type;
 
@@ -180,6 +183,13 @@ struct overlay_desc
    float delta_x, delta_y;
    float x;
    float y;
+   /* These are 'raw' x/y values shifted
+    * by a user-configured offset (c.f.
+    * OVERLAY_X/Y_SEPARATION). Used to determine
+    * correct hitbox locations. By default,
+    * will be equal to x/y */
+   float x_shift;
+   float y_shift;
 
    /* This is a retro_key value for keyboards */
    unsigned retro_key_idx;
@@ -188,9 +198,39 @@ struct overlay_desc
    input_bits_t button_mask;
 
    char next_index_name[64];
-
-   struct texture_image image;
 };
+
+/* Holds general layout information for an
+ * overlay (overall scaling + positional
+ * offset factors) */
+typedef struct
+{
+   float scale_landscape;
+   float aspect_adjust_landscape;
+   float x_separation_landscape;
+   float y_separation_landscape;
+   float x_offset_landscape;
+   float y_offset_landscape;
+   float scale_portrait;
+   float aspect_adjust_portrait;
+   float x_separation_portrait;
+   float y_separation_portrait;
+   float x_offset_portrait;
+   float y_offset_portrait;
+   bool auto_scale;
+} overlay_layout_desc_t;
+
+/* Holds derived overlay layout information
+ * for a specific display orientation */
+typedef struct
+{
+   float x_scale;
+   float y_scale;
+   float x_separation;
+   float y_separation;
+   float x_offset;
+   float y_offset;
+} overlay_layout_t;
 
 typedef struct overlay_desc overlay_desc_t;
 
@@ -198,15 +238,14 @@ typedef struct input_overlay input_overlay_t;
 
 typedef struct
 {
-    bool hide_in_menu;
-    bool overlay_enable;
-    size_t size;
-    float overlay_opacity;
-    float overlay_scale;
-    float overlay_center_x;
-    float overlay_center_y;
-    struct overlay *overlays;
-    struct overlay *active;
+   struct overlay *overlays;
+   struct overlay *active;
+   size_t size;
+   float overlay_opacity;
+   overlay_layout_desc_t layout_desc;
+   bool overlay_enable;
+   bool hide_in_menu;
+   bool hide_when_gamepad_connected;
 } overlay_task_data_t;
 
 void input_overlay_free_overlay(struct overlay *overlay);

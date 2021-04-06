@@ -22,6 +22,8 @@ enum gamepad_pad_axes
    AXIS_LEFT_ANALOG_Y,
    AXIS_RIGHT_ANALOG_X,
    AXIS_RIGHT_ANALOG_Y,
+   AXIS_TOUCH_X,
+   AXIS_TOUCH_Y,
    AXIS_INVALID
 };
 
@@ -47,7 +49,7 @@ int16_t gamepad_get_axis_value(int16_t state[3][2], axis_data *data)
    if (!data)
       return 0;
 
-   switch(data->axis)
+   switch (data->axis)
    {
       case AXIS_LEFT_ANALOG_X:
       case AXIS_LEFT_ANALOG_Y:

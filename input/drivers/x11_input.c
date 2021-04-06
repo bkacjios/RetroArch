@@ -34,18 +34,22 @@
 
 typedef struct x11_input
 {
-   const input_device_driver_t *joypad;
-
    Display *display;
    Window win;
 
+   int mouse_x;
+   int mouse_y;
+   int mouse_delta_x;
+   int mouse_delta_y;
+   bool mouse_grabbed;
    char state[32];
-   bool mouse_l, mouse_r, mouse_m;
-   int mouse_x, mouse_y;
-   int mouse_last_x, mouse_last_y;
-
-   bool grab_mouse;
+   bool mouse_l;
+   bool mouse_r;
+   bool mouse_m;
 } x11_input_t;
+
+/* Public global variable */
+extern bool g_x11_entered;
 
 static void *x_input_init(const char *joypad_driver)
 {
@@ -65,7 +69,6 @@ static void *x_input_init(const char *joypad_driver)
    x11->display = (Display*)video_driver_display_get();
    x11->win     = (Window)video_driver_window_get();
 
-   x11->joypad  = input_joypad_init_driver(joypad_driver, x11);
    input_keymaps_init_keyboard_lut(rarch_key_map_x11);
 
    return x11;
@@ -80,9 +83,7 @@ static bool x_keyboard_pressed(x11_input_t *x11, unsigned key)
 static bool x_mouse_button_pressed(
       x11_input_t *x11, unsigned port, unsigned key)
 {
-   bool result;
-
-   switch ( key )
+   switch (key)
    {
       case RETRO_DEVICE_ID_MOUSE_LEFT:
          return x11->mouse_l;
@@ -106,172 +107,17 @@ static bool x_mouse_button_pressed(
    return false;
 }
 
-static int16_t x_pressed_analog(x11_input_t *x11,
-      const struct retro_keybind *binds, unsigned idx, unsigned id)
-{
-   int16_t pressed_minus = 0;
-   int16_t pressed_plus  = 0;
-   unsigned id_minus     = 0;
-   unsigned id_plus      = 0;
-   int id_minus_key      = 0;
-   int id_plus_key       = 0;
-   unsigned keycode      = 0;
-
-   input_conv_analog_id_to_bind_id(idx, id, id_minus, id_plus);
-
-   id_minus_key          = binds[id_minus].key;
-   id_plus_key           = binds[id_plus].key;
-
-   keycode               = rarch_keysym_lut[(enum retro_key)id_minus_key];
-   if (      binds[id_minus].valid
-         && (id_minus_key < RETROK_LAST)
-         && (x11->state[keycode >> 3] & (1 << (keycode & 7))))
-      pressed_minus = -0x7fff;
-
-   keycode               = rarch_keysym_lut[(enum retro_key)id_plus_key];
-   if (      binds[id_plus].valid
-         && (id_plus_key < RETROK_LAST)
-         && (x11->state[keycode >> 3] & (1 << (keycode & 7))))
-      pressed_plus  =  0x7fff;
-
-   return pressed_plus + pressed_minus;
-}
-
-static int16_t x_lightgun_aiming_state(
-      x11_input_t *x11, unsigned idx, unsigned id )
-{
-   struct video_viewport vp;
-   const int edge_detect       = 32700;
-   bool inside                 = false;
-   int16_t res_x               = 0;
-   int16_t res_y               = 0;
-   int16_t res_screen_x        = 0;
-   int16_t res_screen_y        = 0;
-
-   vp.x                        = 0;
-   vp.y                        = 0;
-   vp.width                    = 0;
-   vp.height                   = 0;
-   vp.full_width               = 0;
-   vp.full_height              = 0;
-
-   if (!(video_driver_translate_coord_viewport_wrap(&vp, x11->mouse_x, x11->mouse_y,
-               &res_x, &res_y, &res_screen_x, &res_screen_y)))
-      return 0;
-
-   inside =    (res_x >= -edge_detect) 
-            && (res_y >= -edge_detect)
-            && (res_x <= edge_detect)
-            && (res_y <= edge_detect);
-
-   switch ( id )
-   {
-      case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X:
-         if (inside)
-            return res_x;
-         break;
-      case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y:
-         if (inside)
-            return res_y;
-         break;
-      case RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN:
-         return !inside;
-      default:
-         break;
-   }
-
-   return 0;
-}
-
-static int16_t x_mouse_state(x11_input_t *x11, unsigned id)
-{
-   switch (id)
-   {
-      case RETRO_DEVICE_ID_MOUSE_X:
-         return x11->mouse_x - x11->mouse_last_x;
-      case RETRO_DEVICE_ID_MOUSE_Y:
-         return x11->mouse_y - x11->mouse_last_y;
-      case RETRO_DEVICE_ID_MOUSE_LEFT:
-         return x11->mouse_l;
-      case RETRO_DEVICE_ID_MOUSE_RIGHT:
-         return x11->mouse_r;
-      case RETRO_DEVICE_ID_MOUSE_WHEELUP:
-      case RETRO_DEVICE_ID_MOUSE_WHEELDOWN:
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP:
-      case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN:
-         return x_mouse_state_wheel(id);
-      case RETRO_DEVICE_ID_MOUSE_MIDDLE:
-         return x11->mouse_m;
-   }
-
-   return 0;
-}
-
-static int16_t x_mouse_state_screen(x11_input_t *x11, unsigned id)
-{
-   switch (id)
-   {
-      case RETRO_DEVICE_ID_MOUSE_X:
-         return x11->mouse_x;
-      case RETRO_DEVICE_ID_MOUSE_Y:
-         return x11->mouse_y;
-      default:
-         break;
-   }
-
-   return x_mouse_state(x11, id);
-}
-
-static int16_t x_pointer_state(x11_input_t *x11,
-      unsigned idx, unsigned id, bool screen)
-{
-   struct video_viewport vp;
-   bool inside                 = false;
-   int16_t res_x               = 0;
-   int16_t res_y               = 0;
-   int16_t res_screen_x        = 0;
-   int16_t res_screen_y        = 0;
-
-   vp.x                        = 0;
-   vp.y                        = 0;
-   vp.width                    = 0;
-   vp.height                   = 0;
-   vp.full_width               = 0;
-   vp.full_height              = 0;
-
-   if (!(video_driver_translate_coord_viewport_wrap(
-               &vp, x11->mouse_x, x11->mouse_y,
-               &res_x, &res_y, &res_screen_x, &res_screen_y)))
-      return 0;
-
-   if (screen)
-   {
-      res_x = res_screen_x;
-      res_y = res_screen_y;
-   }
-
-   inside = (res_x >= -0x7fff) && (res_y >= -0x7fff);
-
-   if (!inside)
-      return 0;
-
-   switch (id)
-   {
-      case RETRO_DEVICE_ID_POINTER_X:
-         return res_x;
-      case RETRO_DEVICE_ID_POINTER_Y:
-         return res_y;
-      case RETRO_DEVICE_ID_POINTER_PRESSED:
-         return x11->mouse_l;
-   }
-
-   return 0;
-}
-
-static int16_t x_input_state(void *data,
+static int16_t x_input_state(
+      void *data,
+      const input_device_driver_t *joypad,
+      const input_device_driver_t *sec_joypad,
       rarch_joypad_info_t *joypad_info,
-      const struct retro_keybind **binds, unsigned port,
-      unsigned device, unsigned idx, unsigned id)
+      const struct retro_keybind **binds,
+      bool keyboard_mapping_blocked,
+      unsigned port,
+      unsigned device,
+      unsigned idx,
+      unsigned id)
 {
    x11_input_t *x11     = (x11_input_t*)data;
    settings_t *settings = config_get_ptr();
@@ -285,8 +131,7 @@ static int16_t x_input_state(void *data,
          if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
          {
             unsigned i;
-            int16_t ret = x11->joypad->state(
-                  joypad_info, binds[port], port);
+            int16_t ret = 0;
 
             if (settings->uints.input_mouse_index[port] == 0)
             {
@@ -300,7 +145,7 @@ static int16_t x_input_state(void *data,
                   }
                }
             }
-            if (!input_x.keyboard_mapping_blocked)
+            if (!keyboard_mapping_blocked)
             {
                for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
                {
@@ -315,48 +160,135 @@ static int16_t x_input_state(void *data,
 
             return ret;
          }
-         else
+
+         if (id < RARCH_BIND_LIST_END)
          {
-            if (id < RARCH_BIND_LIST_END)
+            if (binds[port][id].valid)
             {
-               if (binds[port][id].valid)
-               {
-                  if (button_is_pressed( x11->joypad,
-                        joypad_info, binds[port], port, id))
-                     return 1;
-                  else if (
-                        ((binds[port][id].key < RETROK_LAST) && 
-                         x_keyboard_pressed(x11, binds[port][id].key)) 
-                        && ((    id == RARCH_GAME_FOCUS_TOGGLE) 
-                           || !input_x.keyboard_mapping_blocked)
+               if (
+                     ((binds[port][id].key < RETROK_LAST) && 
+                      x_keyboard_pressed(x11, binds[port][id].key)) 
+                     && ((    id == RARCH_GAME_FOCUS_TOGGLE) 
+                        || !keyboard_mapping_blocked)
                      )
+                  return 1;
+               else if (settings->uints.input_mouse_index[port] == 0)
+               {
+                  if (x_mouse_button_pressed(x11, port,
+                           binds[port][id].mbutton))
                      return 1;
-                  else if (settings->uints.input_mouse_index[port] == 0)
-                  {
-                     if (x_mouse_button_pressed(x11, port,
-                              binds[port][id].mbutton))
-                        return 1;
-                  }
                }
             }
          }
          break;
       case RETRO_DEVICE_ANALOG:
          if (binds[port])
-            return x_pressed_analog(x11, binds[port], idx, id);
+         {
+            int id_minus_key      = 0;
+            int id_plus_key       = 0;
+            unsigned id_minus     = 0;
+            unsigned id_plus      = 0;
+            int16_t pressed_minus = 0;
+            int16_t pressed_plus  = 0;
+            int16_t ret           = 0;
+            bool id_plus_valid    = false;
+            bool id_minus_valid   = false;
+
+            input_conv_analog_id_to_bind_id(idx, id, id_minus, id_plus);
+
+            id_minus_valid        = binds[port][id_minus].valid;
+            id_plus_valid         = binds[port][id_plus].valid;
+            id_minus_key          = binds[port][id_minus].key;
+            id_plus_key           = binds[port][id_plus].key;
+
+            if (id_plus_valid && id_plus_key < RETROK_LAST)
+            {
+               unsigned sym = rarch_keysym_lut[(enum retro_key)id_plus_key];
+               if (x11->state[sym >> 3] & (1 << (sym & 7)))
+                  ret = 0x7fff;
+            }
+            if (id_minus_valid && id_minus_key < RETROK_LAST)
+            {
+               unsigned sym = rarch_keysym_lut[(enum retro_key)id_minus_key];
+               if (x11->state[sym >> 3] & (1 << (sym & 7)))
+                  ret += -0x7fff;
+            }
+
+            return ret;
+         }
          break;
       case RETRO_DEVICE_KEYBOARD:
          return (id < RETROK_LAST) && x_keyboard_pressed(x11, id);
       case RETRO_DEVICE_MOUSE:
-         return x_mouse_state(x11, id);
       case RARCH_DEVICE_MOUSE_SCREEN:
-         return x_mouse_state_screen(x11, id);
-
+         switch (id)
+         {
+            case RETRO_DEVICE_ID_MOUSE_X:
+               if (device == RARCH_DEVICE_MOUSE_SCREEN)
+                  return x11->mouse_x;
+               return x11->mouse_delta_x;
+            case RETRO_DEVICE_ID_MOUSE_Y:
+               if (device == RARCH_DEVICE_MOUSE_SCREEN)
+                  return x11->mouse_y;
+               return x11->mouse_delta_y;
+            case RETRO_DEVICE_ID_MOUSE_LEFT:
+               return x11->mouse_l;
+            case RETRO_DEVICE_ID_MOUSE_RIGHT:
+               return x11->mouse_r;
+            case RETRO_DEVICE_ID_MOUSE_WHEELUP:
+            case RETRO_DEVICE_ID_MOUSE_WHEELDOWN:
+            case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELUP:
+            case RETRO_DEVICE_ID_MOUSE_HORIZ_WHEELDOWN:
+               return x_mouse_state_wheel(id);
+            case RETRO_DEVICE_ID_MOUSE_MIDDLE:
+               return x11->mouse_m;
+         }
+         break;
       case RETRO_DEVICE_POINTER:
       case RARCH_DEVICE_POINTER_SCREEN:
          if (idx == 0)
-            return x_pointer_state(x11, idx, id,
-                  device == RARCH_DEVICE_POINTER_SCREEN);
+         {
+            struct video_viewport vp;
+            bool screen                 = device == RARCH_DEVICE_POINTER_SCREEN;
+            bool inside                 = false;
+            int16_t res_x               = 0;
+            int16_t res_y               = 0;
+            int16_t res_screen_x        = 0;
+            int16_t res_screen_y        = 0;
+
+            vp.x                        = 0;
+            vp.y                        = 0;
+            vp.width                    = 0;
+            vp.height                   = 0;
+            vp.full_width               = 0;
+            vp.full_height              = 0;
+
+            if (video_driver_translate_coord_viewport_wrap(
+                     &vp, x11->mouse_x, x11->mouse_y,
+                     &res_x, &res_y, &res_screen_x, &res_screen_y))
+            {
+               if (screen)
+               {
+                  res_x = res_screen_x;
+                  res_y = res_screen_y;
+               }
+
+               inside = (res_x >= -0x7fff) && (res_y >= -0x7fff);
+
+               if (!inside)
+                  return 0;
+
+               switch (id)
+               {
+                  case RETRO_DEVICE_ID_POINTER_X:
+                     return res_x;
+                  case RETRO_DEVICE_ID_POINTER_Y:
+                     return res_y;
+                  case RETRO_DEVICE_ID_POINTER_PRESSED:
+                     return x11->mouse_l;
+               }
+            }
+         }
          break;
       case RETRO_DEVICE_LIGHTGUN:
          switch ( id )
@@ -365,20 +297,61 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X:
             case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y:
             case RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN:
-               return x_lightgun_aiming_state( x11, idx, id );
+               {
+                  struct video_viewport vp;
+                  const int edge_detect       = 32700;
+                  bool inside                 = false;
+                  int16_t res_x               = 0;
+                  int16_t res_y               = 0;
+                  int16_t res_screen_x        = 0;
+                  int16_t res_screen_y        = 0;
 
+                  vp.x                        = 0;
+                  vp.y                        = 0;
+                  vp.width                    = 0;
+                  vp.height                   = 0;
+                  vp.full_width               = 0;
+                  vp.full_height              = 0;
+
+                  if (video_driver_translate_coord_viewport_wrap(&vp,
+                           x11->mouse_x, x11->mouse_y,
+                           &res_x, &res_y, &res_screen_x, &res_screen_y))
+                  {
+                     inside =    (res_x >= -edge_detect) 
+                        && (res_y >= -edge_detect)
+                        && (res_x <= edge_detect)
+                        && (res_y <= edge_detect);
+
+                     switch ( id )
+                     {
+                        case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X:
+                           if (inside)
+                              return res_x;
+                           break;
+                        case RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y:
+                           if (inside)
+                              return res_y;
+                           break;
+                        case RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN:
+                           return !inside;
+                        default:
+                           break;
+                     }
+                  }
+               }
+               break;
             /*buttons*/
             case RETRO_DEVICE_ID_LIGHTGUN_TRIGGER:
                {
                   unsigned new_id = RARCH_LIGHTGUN_TRIGGER;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -394,14 +367,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_RELOAD:
                {
                   unsigned new_id = RARCH_LIGHTGUN_RELOAD;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -417,14 +390,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_AUX_A:
                {
                   unsigned new_id = RARCH_LIGHTGUN_AUX_A;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -440,14 +413,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_AUX_B:
                {
                   unsigned new_id = RARCH_LIGHTGUN_AUX_B;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -463,14 +436,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_AUX_C:
                {
                   unsigned new_id = RARCH_LIGHTGUN_AUX_C;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -486,14 +459,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_START:
                {
                   unsigned new_id = RARCH_LIGHTGUN_START;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -509,14 +482,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_SELECT:
                {
                   unsigned new_id = RARCH_LIGHTGUN_SELECT;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -532,14 +505,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP:
                {
                   unsigned new_id = RARCH_LIGHTGUN_DPAD_UP;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -555,14 +528,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN:
                {
                   unsigned new_id = RARCH_LIGHTGUN_DPAD_DOWN;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -578,14 +551,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT:
                {
                   unsigned new_id = RARCH_LIGHTGUN_DPAD_LEFT;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -601,14 +574,14 @@ static int16_t x_input_state(void *data,
             case RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT:
                {
                   unsigned new_id = RARCH_LIGHTGUN_DPAD_RIGHT;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -623,20 +596,20 @@ static int16_t x_input_state(void *data,
                break;
             /*deprecated*/
             case RETRO_DEVICE_ID_LIGHTGUN_X:
-               return x11->mouse_x - x11->mouse_last_x;
+               return x11->mouse_delta_x;
             case RETRO_DEVICE_ID_LIGHTGUN_Y:
-               return x11->mouse_y - x11->mouse_last_y;
+               return x11->mouse_delta_y;
             case RETRO_DEVICE_ID_LIGHTGUN_PAUSE:
                {
                   unsigned new_id = RARCH_LIGHTGUN_START;
-                  if (!input_x.keyboard_mapping_blocked)
+                  if (!keyboard_mapping_blocked)
                      if ((binds[port][new_id].key < RETROK_LAST) 
                            && x_keyboard_pressed(x11, binds[port]
                               [new_id].key) )
                         return 1;
                   if (binds[port][new_id].valid)
                   {
-                     if (button_is_pressed( x11->joypad,
+                     if (button_is_pressed(joypad,
                            joypad_info, binds[port],
                            port, new_id))
                         return 1;
@@ -663,109 +636,156 @@ static void x_input_free(void *data)
    if (!x11)
       return;
 
-   if (x11->joypad)
-      x11->joypad->destroy();
-
    free(x11);
-}
-
-extern bool g_x11_entered;
-
-static void x_input_poll_mouse(x11_input_t *x11,
-      bool video_has_focus)
-{
-   unsigned mask;
-   int root_x, root_y, win_x, win_y;
-   Window root_win, child_win;
-
-   x11->mouse_last_x = x11->mouse_x;
-   x11->mouse_last_y = x11->mouse_y;
-
-   XQueryPointer(x11->display,
-            x11->win,
-            &root_win, &child_win,
-            &root_x, &root_y,
-            &win_x, &win_y,
-            &mask);
-
-   if (g_x11_entered)
-   {
-      x11->mouse_x  = win_x;
-      x11->mouse_y  = win_y;
-      x11->mouse_l  = mask & Button1Mask;
-      x11->mouse_m  = mask & Button2Mask;
-      x11->mouse_r  = mask & Button3Mask;
-
-      /* Somewhat hacky, but seem to do the job. */
-      if (x11->grab_mouse && video_has_focus)
-      {
-         int mid_w, mid_h;
-         struct video_viewport vp;
-
-         vp.x                        = 0;
-         vp.y                        = 0;
-         vp.width                    = 0;
-         vp.height                   = 0;
-         vp.full_width               = 0;
-         vp.full_height              = 0;
-
-         video_driver_get_viewport_info(&vp);
-
-         mid_w = vp.full_width  >> 1;
-         mid_h = vp.full_height >> 1;
-
-         if (x11->mouse_x != mid_w || x11->mouse_y != mid_h)
-         {
-            XWarpPointer(x11->display, None,
-                  x11->win, 0, 0, 0, 0,
-                  mid_w, mid_h);
-            XSync(x11->display, False);
-         }
-         x11->mouse_last_x = mid_w;
-         x11->mouse_last_y = mid_h;
-      }
-   }
 }
 
 static void x_input_poll(void *data)
 {
+   Window root_win;
+   Window child_win;
    x11_input_t *x11     = (x11_input_t*)data;
    bool video_has_focus = video_driver_has_focus();
+   int root_x           = 0;
+   int root_y           = 0;
+   int win_x            = 0;
+   int win_y            = 0;
+   unsigned mask        = 0;
 
-   if (video_has_focus)
-      XQueryKeymap(x11->display, x11->state);
-   else
+   /* If window loses focus, 'reset' keyboard
+    * and ignore mouse input */
+   if (!video_has_focus)
+   {
       memset(x11->state, 0, sizeof(x11->state));
+      x11->mouse_delta_x = 0;
+      x11->mouse_delta_y = 0;
+      x11->mouse_l       = 0;
+      x11->mouse_m       = 0;
+      x11->mouse_r       = 0;
+      return;
+   }
 
-   x_input_poll_mouse(x11, video_has_focus);
+   /* Process keyboard */
+   XQueryKeymap(x11->display, x11->state);
 
-   if (x11->joypad)
-      x11->joypad->poll();
+   /* If pointer is not inside the application
+    * window, ignore mouse input */
+   if (!g_x11_entered)
+   {
+      x11->mouse_delta_x = 0;
+      x11->mouse_delta_y = 0;
+      x11->mouse_l       = 0;
+      x11->mouse_m       = 0;
+      x11->mouse_r       = 0;
+      return;
+   }
+
+   /* Process mouse */
+   if (!XQueryPointer(x11->display,
+         x11->win,
+         &root_win, &child_win,
+         &root_x, &root_y,
+         &win_x, &win_y,
+         &mask))
+      return;
+
+   /* > Mouse buttons */
+   x11->mouse_l = mask & Button1Mask;
+   x11->mouse_m = mask & Button2Mask;
+   x11->mouse_r = mask & Button3Mask;
+
+   /* > Mouse pointer */
+   if (!x11->mouse_grabbed)
+   {
+      /* Mouse is not grabbed - this corresponds
+       * to 'conventional' pointer input, using
+       * absolute screen coordinates */
+      int mouse_last_x = x11->mouse_x;
+      int mouse_last_y = x11->mouse_y;
+
+      x11->mouse_x = win_x;
+      x11->mouse_y = win_y;
+
+      x11->mouse_delta_x = x11->mouse_x - mouse_last_x;
+      x11->mouse_delta_y = x11->mouse_y - mouse_last_y;
+   }
+   else
+   {
+      /* Mouse is grabbed - all pointer movement
+       * must be considered 'relative' */
+      XWindowAttributes win_attr;
+      int centre_x;
+      int centre_y;
+      int warp_x   = win_x;
+      int warp_y   = win_y;
+      bool do_warp = false;
+
+      /* Get dimensions/centre coordinates of
+       * application window */
+      if (!XGetWindowAttributes(x11->display, x11->win, &win_attr))
+      {
+         x11->mouse_delta_x = 0;
+         x11->mouse_delta_y = 0;
+         return;
+      }
+
+      centre_x = win_attr.width  >> 1;
+      centre_y = win_attr.height >> 1;
+
+      /* Get relative movement delta since last
+       * poll event */
+      x11->mouse_delta_x = win_x - centre_x;
+      x11->mouse_delta_y = win_y - centre_y;
+
+      /* Get effective 'absolute' pointer location
+       * (last position + delta, bounded by current
+       * application window dimensions) */
+      x11->mouse_x += x11->mouse_delta_x;
+      x11->mouse_x = (x11->mouse_x < 0)                ? 0                     : x11->mouse_x;
+      x11->mouse_x = (x11->mouse_x >= win_attr.width)  ? (win_attr.width - 1)  : x11->mouse_x;
+
+      x11->mouse_y += x11->mouse_delta_y;
+      x11->mouse_y = (x11->mouse_y < 0)                ? 0                     : x11->mouse_y;
+      x11->mouse_y = (x11->mouse_y >= win_attr.height) ? (win_attr.height - 1) : x11->mouse_y;
+
+      /* Hack/workaround:
+       * - X11 gives absolute pointer coordinates
+       * - Once the pointer reaches a screen edge
+       *   it cannot go any further
+       * - To achieve 'relative' motion, we therefore
+       *   have to reset the hardware cursor to the
+       *   centre of the screen after polling each
+       *   movement delta, such that it is always
+       *   free to move in all directions during the
+       *   time interval until the next poll event */
+      if (win_x != centre_x)
+      {
+         warp_x  = centre_x;
+         do_warp = true;
+      }
+
+      if (win_y != centre_y)
+      {
+         warp_y  = centre_y;
+         do_warp = true;
+      }
+
+      if (do_warp)
+      {
+         XWarpPointer(x11->display, None,
+               x11->win, 0, 0, 0, 0,
+               warp_x, warp_y);
+         XSync(x11->display, False);
+      }
+   }
 }
 
 static void x_grab_mouse(void *data, bool state)
 {
    x11_input_t *x11 = (x11_input_t*)data;
-   if (x11)
-      x11->grab_mouse = state;
-}
-
-static bool x_set_rumble(void *data, unsigned port,
-      enum retro_rumble_effect effect, uint16_t strength)
-{
-   x11_input_t *x11 = (x11_input_t*)data;
    if (!x11)
-      return false;
-   return input_joypad_set_rumble(x11->joypad, port, effect, strength);
-}
+      return;
 
-static const input_device_driver_t *x_get_joypad_driver(void *data)
-{
-   x11_input_t *x11 = (x11_input_t*)data;
-
-   if (!x11)
-      return NULL;
-   return x11->joypad;
+   x11->mouse_grabbed = state;
 }
 
 static uint64_t x_input_get_capabilities(void *data)
@@ -792,9 +812,5 @@ input_driver_t input_x = {
    x_input_get_capabilities,
    "x",
    x_grab_mouse,
-   NULL,
-   x_set_rumble,
-   x_get_joypad_driver,
-   NULL,
-   false
+   NULL
 };

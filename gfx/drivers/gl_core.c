@@ -34,7 +34,7 @@
 #include "../../configuration.h"
 #include "../../dynamic.h"
 #ifdef HAVE_REWIND
-#include "../../managers/state_manager.h"
+#include "../../state_manager.h"
 #endif
 
 #include "../../retroarch.h"
@@ -957,8 +957,9 @@ static bool gl_core_init_default_filter_chain(gl_core_t *gl)
       return false;
 
    gl->filter_chain = gl_core_filter_chain_create_default(
-         gl->video_info.smooth ?
-         GL_CORE_FILTER_CHAIN_LINEAR : GL_CORE_FILTER_CHAIN_NEAREST);
+         gl->video_info.smooth 
+         ? GLSLANG_FILTER_CHAIN_LINEAR 
+         : GLSLANG_FILTER_CHAIN_NEAREST);
 
    if (!gl->filter_chain)
    {
@@ -973,8 +974,9 @@ static bool gl_core_init_filter_chain_preset(gl_core_t *gl, const char *shader_p
 {
    gl->filter_chain = gl_core_filter_chain_create_from_preset(
          shader_path,
-         gl->video_info.smooth ?
-         GL_CORE_FILTER_CHAIN_LINEAR : GL_CORE_FILTER_CHAIN_NEAREST);
+         gl->video_info.smooth
+         ? GLSLANG_FILTER_CHAIN_LINEAR 
+         : GLSLANG_FILTER_CHAIN_NEAREST);
 
    if (!gl->filter_chain)
    {
@@ -1588,7 +1590,7 @@ static void gl_core_set_nonblock_state(void *data, bool state,
    if (!gl)
       return;
 
-   RARCH_LOG("[GLCore]: VSync => %s\n", state ? "off" : "on");
+   RARCH_LOG("[GLCore]: VSync => %s\n", state ? "OFF" : "ON");
 
    gl_core_context_bind_hw_render(gl, false);
    if (!state)
@@ -1851,7 +1853,8 @@ static bool gl_core_frame(void *data, const void *frame,
    const char *stat_text                       = video_info->stat_text;
    bool statistics_show                        = video_info->statistics_show;
    bool msg_bgcolor_enable                     = video_info->msg_bgcolor_enable;
-   bool black_frame_insertion                  = video_info->black_frame_insertion;
+   unsigned black_frame_insertion              = video_info->black_frame_insertion;
+
    unsigned hard_sync_frames                   = video_info->hard_sync_frames;
    bool runloop_is_paused                      = video_info->runloop_is_paused;
    bool runloop_is_slowmotion                  = video_info->runloop_is_slowmotion;
@@ -1987,21 +1990,32 @@ static bool gl_core_frame(void *data, const void *frame,
          gl_core_pbo_async_readback(gl);
    }
 
-   /* Disable BFI during fast forward, slow-motion,
-    * and pause to prevent flicker. */
-   if (
-         black_frame_insertion
-         && !input_driver_nonblock_state
-         && !runloop_is_slowmotion
-         && !runloop_is_paused)
-   {
-      if (gl->ctx_driver->swap_buffers)
-         gl->ctx_driver->swap_buffers(gl->ctx_data);
-      glClear(GL_COLOR_BUFFER_BIT);
-   }
 
    if (gl->ctx_driver->swap_buffers)
       gl->ctx_driver->swap_buffers(gl->ctx_data);
+
+ /* Emscripten has to do black frame insertion in its main loop */
+#ifndef EMSCRIPTEN
+   /* Disable BFI during fast forward, slow-motion,
+    * and pause to prevent flicker. */
+    if (
+         black_frame_insertion
+         && !input_driver_nonblock_state
+         && !runloop_is_slowmotion
+         && !runloop_is_paused 
+         && !gl->menu_texture_enable)
+    {
+        unsigned n;
+        for (n = 0; n < black_frame_insertion; ++n)
+        {
+          glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+          glClear(GL_COLOR_BUFFER_BIT);			
+
+          if (gl->ctx_driver->swap_buffers)
+            gl->ctx_driver->swap_buffers(gl->ctx_data);
+        }  
+    }   
+#endif 
 
    if (hard_sync &&
        !input_driver_nonblock_state &&

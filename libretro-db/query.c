@@ -65,25 +65,25 @@ typedef struct rmsgpack_dom_value (*rarch_query_func)(
 
 struct invocation
 {
+   struct argument *argv;
    rarch_query_func func;
    unsigned argc;
-   struct argument *argv;
 };
 
 struct argument
 {
-   enum argument_type type;
    union
    {
       struct rmsgpack_dom_value value;
       struct invocation invocation;
    } a;
+   enum argument_type type;
 };
 
 struct query
 {
+   struct invocation root; /* ptr alignment */
    unsigned ref_count;
-   struct invocation root;
 };
 
 struct registered_func
@@ -110,9 +110,7 @@ static struct rmsgpack_dom_value query_func_is_true(
    res.type      = RDT_BOOL;
    res.val.bool_ = 0;
 
-   if (argc > 0 || input.type != RDT_BOOL)
-      res.val.bool_ = 0;
-   else
+   if (!(argc > 0 || input.type != RDT_BOOL))
       res.val.bool_ = input.val.bool_;
 
    return res;
@@ -132,9 +130,7 @@ static struct rmsgpack_dom_value func_equals(
    {
       arg = argv[0];
 
-      if (arg.type != AT_VALUE)
-         res.val.bool_ = 0;
-      else
+      if (arg.type == AT_VALUE)
       {
          if (  input.type       == RDT_UINT && 
                arg.a.value.type == RDT_INT)
@@ -171,7 +167,7 @@ static struct rmsgpack_dom_value query_func_operator_or(
                   ), 0, NULL);
 
       if (res.val.bool_)
-         return res;
+         break;
    }
 
    return res;
@@ -200,7 +196,7 @@ static struct rmsgpack_dom_value query_func_operator_and(
                0, NULL);
 
       if (!res.val.bool_)
-         return res;
+         break;
    }
    return res;
 }
@@ -290,7 +286,7 @@ static void query_raise_unknown_function(
    if (len < (_len - n - 3))
       strncpy(s + n, name, len);
 
-   strlcpy(s + n + len, "'", _len);
+   strcpy_literal(s + n + len, "'");
    *error = s;
 }
 
@@ -333,7 +329,7 @@ static struct buffer query_parse_integer(
    }
    else
    {
-      while (isdigit((int)buff.data[buff.offset]))
+      while (ISDIGIT((int)buff.data[buff.offset]))
          buff.offset++;
    }
 
@@ -343,7 +339,7 @@ static struct buffer query_parse_integer(
 static struct buffer query_chomp(struct buffer buff)
 {
    for (; (unsigned)buff.offset < buff.len
-         && isspace((int)buff.data[buff.offset]); buff.offset++);
+         && ISSPACE((int)buff.data[buff.offset]); buff.offset++);
    return buff;
 }
 
@@ -363,14 +359,12 @@ static struct buffer query_expect_eof(char *s, size_t len,
    return buff;
 }
 
-static int query_peek(struct buffer buff, const char * data)
+static int query_peek(struct buffer buff, const char * data,
+      size_t size_data)
 {
    size_t remain    = buff.len - buff.offset;
-   size_t size_data = strlen(data);
-
    if (remain < size_data)
       return 0;
-
    return (strncmp(buff.data + buff.offset,
             data, size_data) == 0);
 }
@@ -417,7 +411,7 @@ static struct buffer query_parse_string(
    if (terminator == 'b')
    {
       is_binstr = 1;
-      buff = query_get_char(s, len,
+      buff      = query_get_char(s, len,
              buff, &terminator, error);
    }
 
@@ -452,7 +446,7 @@ static struct buffer query_parse_string(
 
       if (!value->val.string.buff)
       {
-         strlcpy(s, "Out of memory", len);
+         strcpy_literal(s, "Out of memory");
          *error = s;
       }
       else if (is_binstr)
@@ -495,30 +489,30 @@ static struct buffer query_parse_value(
 {
    buff                 = query_chomp(buff);
 
-   if (query_peek(buff, "nil"))
+   if (query_peek(buff, "nil", STRLEN_CONST("nil")))
    {
       buff.offset      += STRLEN_CONST("nil");
       value->type       = RDT_NULL;
    }
-   else if (query_peek(buff, "true"))
+   else if (query_peek(buff, "true", STRLEN_CONST("true")))
    {
       buff.offset      += STRLEN_CONST("true");
       value->type       = RDT_BOOL;
       value->val.bool_  = 1;
    }
-   else if (query_peek(buff, "false"))
+   else if (query_peek(buff, "false", STRLEN_CONST("false")))
    {
       buff.offset       += STRLEN_CONST("false");
       value->type        = RDT_BOOL;
       value->val.bool_   = 0;
    }
    else if (
-         query_peek(buff, "b")  || 
-         query_peek(buff, "\"") ||
-         query_peek(buff, "'"))
+         query_peek(buff, "b", STRLEN_CONST("b"))  || 
+         query_peek(buff, "\"", STRLEN_CONST("\"")) ||
+         query_peek(buff, "'", STRLEN_CONST("'")))
       buff = query_parse_string(s, len,
              buff, value, error);
-   else if (isdigit((int)buff.data[buff.offset]))
+   else if (ISDIGIT((int)buff.data[buff.offset]))
       buff = query_parse_integer(s, len, buff, value, error);
    return buff;
 }
@@ -562,9 +556,7 @@ static struct buffer query_get_ident(
    *len   = 0;
    query_peek_char(s, _len, buff, &c, error);
 
-   if (*error)
-      goto clean;
-   if (!isalpha((int)c))
+   if (*error || !ISALPHA((int)c))
       return buff;
 
    buff.offset++;
@@ -573,14 +565,13 @@ static struct buffer query_get_ident(
 
    while (!*error)
    {
-      if (!(isalpha((int)c) || isdigit((int)c) || c == '_'))
+      if (!(ISALNUM((int)c) || c == '_'))
          break;
       buff.offset++;
       *len = *len + 1;
       query_peek_char(s, _len, buff, &c, error);
    }
 
-clean:
    return buff;
 }
 
@@ -617,13 +608,14 @@ static struct buffer query_parse_argument(
    buff = query_chomp(buff);
 
    if (
-         isalpha((int)buff.data[buff.offset])
+         ISALPHA((int)buff.data[buff.offset])
          && !(
-               query_peek(buff, "nil")
-            || query_peek(buff, "true")
-            || query_peek(buff, "false")
-            || query_peek(buff, "b\"")
-            || query_peek(buff,  "b'") /* bin string prefix*/
+               query_peek(buff, "nil",   STRLEN_CONST("nil"))
+            || query_peek(buff, "true",  STRLEN_CONST("true"))
+            || query_peek(buff, "false", STRLEN_CONST("false"))
+            || query_peek(buff, "b\"",   STRLEN_CONST("b\""))
+            || query_peek(buff, "b'",    STRLEN_CONST("b'"))
+            /* bin string prefix*/
             )
       )
    {
@@ -631,7 +623,7 @@ static struct buffer query_parse_argument(
       buff      = query_parse_method_call(s, len, buff,
             &arg->a.invocation, error);
    }
-   else if (query_peek(buff, "{"))
+   else if (query_peek(buff, "{", STRLEN_CONST("{")))
    {
       arg->type = AT_FUNCTION;
       buff      = query_parse_table(s, len,
@@ -688,12 +680,12 @@ static struct buffer query_parse_method_call(
    }
 
    buff = query_chomp(buff);
-   while (!query_peek(buff, ")"))
+   while (!query_peek(buff, ")", STRLEN_CONST(")")))
    {
       if (argi >= QUERY_MAX_ARGS)
       {
-         strlcpy(s,
-               "Too many arguments in function call.", len);
+         strcpy_literal(s,
+               "Too many arguments in function call.");
          *error = s;
          goto clean;
       }
@@ -725,18 +717,18 @@ static struct buffer query_parse_method_call(
 
    if (!invocation->argv)
    {
-      strlcpy(s, "Out of memory", len);
+      strcpy_literal(s, "Out of memory");
       *error = s;
       goto clean;
    }
    memcpy(invocation->argv, args,
          sizeof(struct argument) * argi);
 
-   goto success;
+   return buff;
+
 clean:
    for (i = 0; i < argi; i++)
       query_argument_free(&args[i]);
-success:
    return buff;
 }
 
@@ -770,7 +762,7 @@ static struct rmsgpack_dom_value query_func_all_map(
       if (arg.type != AT_VALUE)
       {
          res.val.bool_ = 0;
-         goto clean;
+         return res;
       }
       value = rmsgpack_dom_value_map_value(&input, &arg.a.value);
       if (!value) /* All missing fields are nil */
@@ -790,7 +782,6 @@ static struct rmsgpack_dom_value query_func_all_map(
       if (!res.val.bool_)
          break;
    }
-clean:
    return res;
 }
 
@@ -813,17 +804,17 @@ static struct buffer query_parse_table(
 
    buff = query_chomp(buff);
 
-   while (!query_peek(buff, "}"))
+   while (!query_peek(buff, "}", STRLEN_CONST("}")))
    {
       if (argi >= QUERY_MAX_ARGS)
       {
-         strlcpy(s,
-               "Too many arguments in function call.", len);
+         strcpy_literal(s,
+               "Too many arguments in function call.");
          *error = s;
          goto clean;
       }
 
-      if (isalpha((int)buff.data[buff.offset]))
+      if (ISALPHA((int)buff.data[buff.offset]))
       {
          buff = query_get_ident(s, len,
                buff, &ident_name, &ident_len, error);
@@ -866,8 +857,8 @@ static struct buffer query_parse_table(
 
       if (argi >= QUERY_MAX_ARGS)
       {
-         strlcpy(s,
-               "Too many arguments in function call.", len);
+         strcpy_literal(s,
+               "Too many arguments in function call.");
          *error = s;
          goto clean;
       }
@@ -900,18 +891,18 @@ static struct buffer query_parse_table(
 
    if (!invocation->argv)
    {
-      strlcpy(s, "Out of memory", len);
+      strcpy_literal(s, "Out of memory");
       *error = s;
       goto clean;
    }
    memcpy(invocation->argv, args,
          sizeof(struct argument) * argi);
 
-   goto success;
+   return buff;
+
 clean:
    for (i = 0; i < argi; i++)
       query_argument_free(&args[i]);
-success:
    return buff;
 }
 
@@ -957,14 +948,14 @@ void *libretrodb_query_compile(libretrodb_t *db,
 
    buff                  = query_chomp(buff);
 
-   if (query_peek(buff, "{"))
+   if (query_peek(buff, "{", STRLEN_CONST("{")))
    {
       buff = query_parse_table(tmp_error_buff,
             error_buff_len, buff, &q->root, error_string);
       if (*error_string)
          goto error;
    }
-   else if (isalpha((int)buff.data[buff.offset]))
+   else if (ISALPHA((int)buff.data[buff.offset]))
       buff = query_parse_method_call(tmp_error_buff,
             error_buff_len,
             buff, &q->root, error_string);

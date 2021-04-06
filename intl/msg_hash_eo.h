@@ -56,6 +56,8 @@
 
 /* Settings > Video */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > CRT SwitchRes */
 
@@ -71,6 +73,8 @@
 
 /* Settings > Video > Scaling */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > Synchronization */
 
@@ -98,17 +102,21 @@
 
 /* Settings > Input */
 
+#if defined(HAVE_DINPUT) || defined(HAVE_WINRAWINPUT)
+#endif
 
 /* Settings > Input > Haptic Feedback/Vibration */
 
+#if defined(DINGUX) && defined(HAVE_LIBSHAKE)
+#endif
 
 /* Settings > Input > Menu Controls */
 
 
-/* Settings > Input > Hotkey Binds */
+/* Settings > Input > Hotkeys */
 
 
-/* Settings > Input > Port # Binds */
+/* Settings > Input > Port # Controls */
 
 
 /* Settings > Latency */
@@ -148,8 +156,8 @@
 
 /* Settings > On-Screen Display > On-Screen Overlay */
 
-
-
+#if defined(ANDROID)
+#endif
 
 /* Settings > On-Screen Display > Video Layout */
 
@@ -160,10 +168,10 @@
 /* Settings > User Interface */
 
 
-/* Settings > User Interface > Views */
+/* Settings > User Interface > Menu Item Visibility */
 
 
-/* Settings > User Interface > Views > Quick Menu */
+/* Settings > User Interface > Menu Item Visibility > Quick Menu */
 
 
 /* Settings > User Interface > Views > Settings */
@@ -213,6 +221,9 @@
 /* Settings > User > Accounts > Twitch */
 
 
+/* Settings > User > Accounts > Facebook Gaming */
+
+
 /* Settings > Directory */
 
 
@@ -227,13 +238,13 @@
 /* Netplay > Host */
 
 
-/* Import content */
+/* Import Content */
 
 
-/* Import content > Scan File */
+/* Import Content > Scan File */
 
 
-/* Import content > Manual Scan */
+/* Import Content > Manual Scan */
 
 
 /* Explore tab */
@@ -252,6 +263,11 @@
 
 /* Quick Menu > Options */
 
+
+/* Quick Menu > Options > Manage Core Options */
+
+
+/* - Legacy (unused) */
 
 /* Quick Menu > Controls */
 
@@ -282,6 +298,8 @@
 
 /* Quick Menu > Shaders > Save */
 
+   
+
 
 /* Quick Menu > Shaders > Remove */
 
@@ -294,6 +312,10 @@
 
 /* Quick Menu > Achievements */
 
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_ACHIEVEMENT_PAUSE_MENU,
+   "ToggleCheevosHardcore" /* not-displayed - needed to resolve submenu */
+   )
 
 /* Quick Menu > Information */
 

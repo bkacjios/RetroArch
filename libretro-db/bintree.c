@@ -39,12 +39,11 @@ struct bintree_node
 struct bintree
 {
    struct bintree_node *root;
-   bintree_cmp_func cmp;
    void *ctx;
+   bintree_cmp_func cmp;
 };
 
-/* TODO/FIXME - static global variable */
-static void *NIL_NODE = &NIL_NODE;
+static void * const NIL_NODE = (void*)&NIL_NODE;
 
 static struct bintree_node *bintree_new_nil_node(
       struct bintree_node *parent)

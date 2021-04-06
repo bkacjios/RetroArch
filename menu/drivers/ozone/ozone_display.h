@@ -19,19 +19,13 @@
 
 #include "ozone.h"
 
-#include "../../menu_driver.h"
+#include "../../../gfx/gfx_display.h"
 
-void ozone_draw_text(
-      ozone_handle_t *ozone,
-      const char *str, float x,
-      float y,
-      enum text_alignment text_align,
-      unsigned width, unsigned height, ozone_font_data_t *font_data,
-      uint32_t color,
-      bool draw_outside);
+#include "../../menu_driver.h"
 
 void ozone_draw_cursor(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -40,6 +34,7 @@ void ozone_draw_cursor(
       size_t y, float alpha);
 
 void ozone_draw_icon(
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,
@@ -68,6 +63,7 @@ void ozone_draw_osk(
 
 void ozone_draw_messagebox(
       ozone_handle_t *ozone,
+      gfx_display_t *p_disp,
       void *userdata,
       unsigned video_width,
       unsigned video_height,

@@ -28,21 +28,6 @@
 #include "../font_driver.h"
 #include "../common/d3d10_common.h"
 
-static const float* gfx_display_d3d10_get_default_vertices(void)
-{
-   return NULL;
-}
-
-static const float* gfx_display_d3d10_get_default_tex_coords(void)
-{
-   return NULL;
-}
-
-static void* gfx_display_d3d10_get_default_mvp(void *data)
-{
-   return NULL;
-}
-
 static void gfx_display_d3d10_blend_begin(void *data)
 {
    d3d10_video_t* d3d10 = (d3d10_video_t*)data;
@@ -57,18 +42,16 @@ static void gfx_display_d3d10_blend_end(void *data)
          d3d10->blend_disable, NULL, D3D10_DEFAULT_SAMPLE_MASK);
 }
 
-static void gfx_display_d3d10_viewport(gfx_display_ctx_draw_t *draw, void *data) { }
-
 static void gfx_display_d3d10_draw(gfx_display_ctx_draw_t *draw,
       void *data, unsigned video_width, unsigned video_height)
 {
-   int vertex_count;
+   int vertex_count     = 1;
    d3d10_video_t* d3d10 = (d3d10_video_t*)data;
 
    if (!d3d10 || !draw || !draw->texture)
       return;
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
       case VIDEO_SHADER_MENU:
       case VIDEO_SHADER_MENU_2:
@@ -76,7 +59,7 @@ static void gfx_display_d3d10_draw(gfx_display_ctx_draw_t *draw,
       case VIDEO_SHADER_MENU_4:
       case VIDEO_SHADER_MENU_5:
       case VIDEO_SHADER_MENU_6:
-         d3d10_set_shader(d3d10->device, &d3d10->shaders[draw->pipeline.id]);
+         d3d10_set_shader(d3d10->device, &d3d10->shaders[draw->pipeline_id]);
          D3D10Draw(d3d10->device, draw->coords->vertices, 0);
 
          D3D10SetBlendState(d3d10->device, d3d10->blend_enable, NULL, D3D10_DEFAULT_SAMPLE_MASK);
@@ -88,8 +71,6 @@ static void gfx_display_d3d10_draw(gfx_display_ctx_draw_t *draw,
 
    if (draw->coords->vertex && draw->coords->tex_coord && draw->coords->color)
       vertex_count = draw->coords->vertices;
-   else
-      vertex_count = 1;
 
    if (!d3d10->sprites.enabled || vertex_count > d3d10->sprites.capacity)
       return;
@@ -189,12 +170,13 @@ static void gfx_display_d3d10_draw_pipeline(gfx_display_ctx_draw_t* draw,
    if (!d3d10 || !draw)
       return;
 
-   switch (draw->pipeline.id)
+   switch (draw->pipeline_id)
    {
       case VIDEO_SHADER_MENU:
       case VIDEO_SHADER_MENU_2:
       {
-         video_coord_array_t* ca = gfx_display_get_coords_array();
+         gfx_display_t *p_disp     = disp_get_ptr();
+         video_coord_array_t* ca   = &p_disp->dispca;
 
          if (!d3d10->menu_pipeline_vbo)
          {
@@ -235,20 +217,6 @@ static void gfx_display_d3d10_draw_pipeline(gfx_display_ctx_draw_t* draw,
       *(d3d10_uniform_t*)mapped_ubo = d3d10->ubo_values;
       D3D10UnmapBuffer(d3d10->ubo);
    }
-}
-
-static void gfx_display_d3d10_restore_clear_color(void) {}
-
-static void gfx_display_d3d10_clear_color(
-      gfx_display_ctx_clearcolor_t* clearcolor, void *data)
-{
-   d3d10_video_t* d3d10 = (d3d10_video_t*)data;
-
-   if (!d3d10 || !clearcolor)
-      return;
-
-   D3D10ClearRenderTargetView(d3d10->device,
-         d3d10->renderTargetView, (float*)clearcolor);
 }
 
 static bool gfx_display_d3d10_font_init_first(
@@ -306,14 +274,11 @@ void gfx_display_d3d10_scissor_end(void *data,
 gfx_display_ctx_driver_t gfx_display_ctx_d3d10 = {
    gfx_display_d3d10_draw,
    gfx_display_d3d10_draw_pipeline,
-   gfx_display_d3d10_viewport,
    gfx_display_d3d10_blend_begin,
    gfx_display_d3d10_blend_end,
-   gfx_display_d3d10_restore_clear_color,
-   gfx_display_d3d10_clear_color,
-   gfx_display_d3d10_get_default_mvp,
-   gfx_display_d3d10_get_default_vertices,
-   gfx_display_d3d10_get_default_tex_coords,
+   NULL,                                     /* get_default_mvp        */
+   NULL,                                     /* get_default_vertices   */
+   NULL,                                     /* get_default_tex_coords */
    gfx_display_d3d10_font_init_first,
    GFX_VIDEO_DRIVER_DIRECT3D10,
    "d3d10",

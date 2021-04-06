@@ -15,7 +15,6 @@
 
 #include <stdint.h>
 #include <malloc.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <kernel.h>
@@ -32,26 +31,17 @@ typedef struct ps2_audio
    /* TODO/FIXME - nonblock is not implemented */
    bool nonblock;
    bool running;
-
 } ps2_audio_t;
 
 static void audioConfigure(ps2_audio_t *ps2, unsigned rate)
 {
-   int err;
    struct audsrv_fmt_t format;
 
    format.bits     = AUDIO_BITS;
    format.freq     = rate;
    format.channels = AUDIO_CHANNELS;
 
-   err             = audsrv_set_format(&format);
-
-   if (err)
-   {
-      printf("set format returned %d\n", err);
-      printf("audsrv returned error string: %s\n", audsrv_get_error_string());
-   }
-
+   audsrv_set_format(&format);
    audsrv_set_volume(MAX_VOLUME);
 }
 

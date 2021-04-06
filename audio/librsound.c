@@ -31,16 +31,21 @@
 
 #include "drivers/rsound.h"
 
-#if defined(__CELLOS_LV2__)
+#ifdef __PS3__
+#ifdef __PSL1GHT__
+#include <sysmodule/sysmodule.h>
+#include <sys/systime.h>
+#include <net/net.h>
+#else
 #include <cell/sysmodule.h>
 #include <sys/timer.h>
 #include <sys/sys_time.h>
-
-/* Network headers */
 #include <netex/net.h>
 #include <netex/errno.h>
-#define NETWORK_COMPAT_HEADERS 1
-#elif defined(GEKKO)
+#endif
+#endif
+
+#if defined(GEKKO)
 #include <network.h>
 #else
 #define NETWORK_COMPAT_HEADERS 1
@@ -52,8 +57,12 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
-#ifdef __CELLOS_LV2__
+#ifdef __PS3__
+#ifdef __PSL1GHT__
+#include <net/poll.h>
+#else
 #include <sys/poll.h>
+#endif
 #else
 #include <poll.h>
 #endif
@@ -107,7 +116,7 @@ enum rsd_conn_type
 #define RSD_ERR(fmt, args...)
 #define RSD_DEBUG(fmt, args...)
 
-#if defined(__CELLOS_LV2__)
+#if defined(__PS3__)
 static int init_count = 0;
 #define pollfd_fd(x) x.fd
 #define net_send(a,b,c,d) send(a,b,c,d)
@@ -254,7 +263,7 @@ static int rsnd_connect_server( rsound_t *rd )
 
    /* Uses non-blocking IO since it performed more deterministic with poll()/send() */
 
-#ifdef __CELLOS_LV2__
+#ifdef __PS3__
    setsockopt(rd->conn.socket, SOL_SOCKET, SO_NBIO, &i, sizeof(int));
    setsockopt(rd->conn.ctl_socket, SOL_SOCKET, SO_NBIO, &i, sizeof(int));
 #else
@@ -700,11 +709,11 @@ static ssize_t rsnd_recv_chunk(int socket, void *buf, size_t size, int blocking)
 
 static int rsnd_poll(struct pollfd *fd, int numfd, int timeout)
 {
-   for(;;)
+   for (;;)
    {
-      if ( socketpoll(fd, numfd, timeout) < 0 )
+      if (socketpoll(fd, numfd, timeout) < 0)
       {
-         if ( errno == EINTR )
+         if (errno == EINTR)
             continue;
 
          perror("poll");
@@ -725,8 +734,8 @@ static int64_t rsnd_get_time_usec(void)
    if (!QueryPerformanceCounter(&count))
       return 0;
    return count.QuadPart * 1000000 / freq.QuadPart;
-#elif defined(__CELLOS_LV2__)
-   return sys_time_get_system_time();
+#elif defined(__PS3__)
+   return sysGetSystemTime();
 #elif defined(GEKKO)
    return ticks_to_microsecs(gettime());
 #elif defined(__MACH__) // OSX doesn't have clock_gettime ...
@@ -938,15 +947,15 @@ static int rsnd_close_ctl(rsound_t *rd)
    int index = 0;
    char buf[RSD_PROTO_MAXSIZE*2] = {0};
 
-   for(;;)
+   for (;;)
    {
-      if ( rsnd_poll(&fd, 1, 2000) < 0 )
+      if (rsnd_poll(&fd, 1, 2000) < 0)
          return -1;
 
-      if ( fd.revents & POLLHUP )
+      if (fd.revents & POLLHUP)
          break;
 
-      else if ( fd.revents & POLLIN )
+      if (fd.revents & POLLIN)
       {
          const char *subchar;
 
@@ -1102,7 +1111,7 @@ static void rsnd_thread ( void * thread_data )
    /* Two (;;) for loops! :3 Beware! */
    for (;;)
    {
-      for(;;)
+      for (;;)
       {
          _TEST_CANCEL();
 
@@ -1375,7 +1384,7 @@ int rsd_exec(rsound_t *rsound)
 
    rsnd_stop_thread(rsound);
 
-#if defined(__CELLOS_LV2__)
+#ifdef __PS3__
    int i = 0;
    setsockopt(rsound->conn.socket, SOL_SOCKET, SO_NBIO, &i, sizeof(int));
 #else
@@ -1567,11 +1576,11 @@ int rsd_init(rsound_t** rsound)
    rsd_set_param(*rsound, RSD_HOST, RSD_DEFAULT_HOST);
    rsd_set_param(*rsound, RSD_PORT, RSD_DEFAULT_PORT);
 
-#ifdef __CELLOS_LV2__
+#ifdef __PS3__
    if (init_count == 0)
    {
-      cellSysmoduleLoadModule(CELL_SYSMODULE_NET);
-      sys_net_initialize_network();
+      sysModuleLoad(SYSMODULE_NET);
+      netInitialize();
       init_count++;
    }
 #endif

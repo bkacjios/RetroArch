@@ -31,8 +31,8 @@ else ifeq ($(LIBRETRO), bluemsx)
 	APP_TITLE            = blueMSX
 	APP_PRODUCT_CODE     = RARCH-BLUEMSX
 	APP_UNIQUE_ID        = 0xBAC9A
-	APP_ICON             = pkg/ctr/assets/default.png
-	APP_BANNER           = pkg/ctr/assets/libretro_banner.png
+	APP_ICON             = pkg/ctr/assets/bluemsx.png
+	APP_BANNER           = pkg/ctr/assets/bluemsx_banner.png
 
 else ifeq ($(LIBRETRO), chailove)
 	APP_TITLE            = ChaiLove
@@ -351,6 +351,7 @@ else ifeq ($(LIBRETRO), nxengine)
 	APP_UNIQUE_ID        = 0xBAC05
 	APP_ICON             = pkg/ctr/assets/nxengine.png
 	APP_BANNER           = pkg/ctr/assets/nxengine_banner.png
+	WHOLE_ARCHIVE_LINK   = 1
 
 else ifeq ($(LIBRETRO), o2em)
 	APP_TITLE            = O2EM Libretro
@@ -400,6 +401,14 @@ else ifeq ($(LIBRETRO), pokemini)
 	APP_ICON             = pkg/ctr/assets/pokemini.png
 	APP_BANNER           = pkg/ctr/assets/pokemini_banner.png
 
+else ifeq ($(LIBRETRO), potator)
+	APP_TITLE            = Potator
+	APP_AUTHOR           = various
+	APP_PRODUCT_CODE     = RARCH-POTATOR
+	APP_UNIQUE_ID        = 0xBACD0
+	APP_ICON             = pkg/ctr/assets/potator.png
+	APP_BANNER           = pkg/ctr/assets/potator_banner.png
+
 else ifeq ($(LIBRETRO), prboom)
 	APP_TITLE            = PrBoom
 	APP_AUTHOR           = Florian Schulze
@@ -438,12 +447,27 @@ else ifeq ($(LIBRETRO), race)
 	APP_ICON             = pkg/ctr/assets/race.png
 	APP_BANNER           = pkg/ctr/assets/race_banner.png
 
+else ifeq ($(LIBRETRO), scummvm)
+	APP_TITLE            = ScummVM Libretro
+	APP_AUTHOR           = SCUMMVMdev
+	APP_PRODUCT_CODE     = RARCH-SCUMMVM
+	APP_UNIQUE_ID        = 0xBACC0
+	APP_ICON             = pkg/ctr/assets/scummvm.png
+	APP_BANNER           = pkg/ctr/assets/scummvm_banner.png
+
 else ifeq ($(LIBRETRO), smsplus)
 	APP_TITLE            = SMSplus
 	APP_PRODUCT_CODE     = RARCH-SMSPLUS
 	APP_UNIQUE_ID        = 0xBAC97
 	APP_ICON             = pkg/ctr/assets/smsplus.png
 	APP_BANNER           = pkg/ctr/assets/smsplus_banner.png
+
+else ifeq ($(LIBRETRO), snes9x)
+	APP_TITLE            = Snes9x
+	APP_PRODUCT_CODE     = RARCH-SNES9X
+	APP_UNIQUE_ID        = 0xBACBA
+	APP_ICON             = pkg/ctr/assets/snes9x.png
+	APP_BANNER           = pkg/ctr/assets/snes9x_banner.png
 
 else ifeq ($(LIBRETRO), snes9x2002)
 	APP_TITLE            = Snes9x 2002

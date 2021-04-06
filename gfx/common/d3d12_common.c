@@ -63,6 +63,7 @@ DEFINE_GUIDW(IID_ID3D12CommandSignature, 0xc36a797c, 0xec80, 0x4f0a, 0x89, 0x85,
 DEFINE_GUIDW(IID_ID3D12CommandList, 0x7116d91c, 0xe7e4, 0x47ce, 0xb8, 0xc6, 0xec, 0x81, 0x68, 0xf4, 0x37, 0xe5);
 DEFINE_GUIDW(IID_ID3D12PipelineLibrary, 0xc64226a8, 0x9201, 0x46af, 0xb4, 0xcc, 0x53, 0xfb, 0x9f, 0xf7, 0x41, 0x4f);
 DEFINE_GUIDW(IID_ID3D12Device1, 0x77acce80, 0x638e, 0x4e65, 0x88, 0x95, 0xc1, 0xf2, 0x33, 0x86, 0x86, 0x3e);
+#ifdef DEBUG
 DEFINE_GUIDW(IID_ID3D12Debug, 0x344488b7, 0x6846, 0x474b, 0xb9, 0x89, 0xf0, 0x27, 0x44, 0x82, 0x45, 0xe0);
 DEFINE_GUIDW(IID_ID3D12Debug1, 0xaffaa4ca, 0x63fe, 0x4d8e, 0xb8, 0xad, 0x15, 0x90, 0x00, 0xaf, 0x43, 0x04);
 DEFINE_GUIDW(IID_ID3D12DebugDevice1, 0xa9b71770, 0xd099, 0x4a65, 0xa6, 0x98, 0x3d, 0xee, 0x10, 0x02, 0x0f, 0x88);
@@ -70,6 +71,7 @@ DEFINE_GUIDW(IID_ID3D12DebugDevice, 0x3febd6dd, 0x4973, 0x4787, 0x81, 0x94, 0xe4
 DEFINE_GUIDW(IID_ID3D12DebugCommandQueue, 0x09e0bf36, 0x54ac, 0x484f, 0x88, 0x47, 0x4b, 0xae, 0xea, 0xb6, 0x05, 0x3a);
 DEFINE_GUIDW(IID_ID3D12DebugCommandList1, 0x102ca951, 0x311b, 0x4b01, 0xb1, 0x1f, 0xec, 0xb8, 0x3e, 0x06, 0x1b, 0x37);
 DEFINE_GUIDW(IID_ID3D12DebugCommandList, 0x09e0bf36, 0x54ac, 0x484f, 0x88, 0x47, 0x4b, 0xae, 0xea, 0xb6, 0x05, 0x3f);
+#endif
 /* clang-format on */
 #endif
 
@@ -271,10 +273,8 @@ bool d3d12_init_queue(d3d12_video_t* d3d12)
    D3D12CloseGraphicsCommandList(d3d12->queue.cmd);
 
    D3D12CreateFence(d3d12->device, 0, D3D12_FENCE_FLAG_NONE, &d3d12->queue.fence);
-   d3d12->queue.fenceValue = 1;
+   d3d12->queue.fenceValue = 0;
    d3d12->queue.fenceEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-   D3D12SignalCommandQueue(d3d12->queue.handle, d3d12->queue.fence, d3d12->queue.fenceValue);
 
    return true;
 }
@@ -510,12 +510,12 @@ bool d3d12_init_descriptors(d3d12_video_t* d3d12)
    d3d12_create_root_signature(d3d12->device, &desc, &d3d12->desc.cs_rootSignature);
 
    d3d12->desc.rtv_heap.desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-   d3d12->desc.rtv_heap.desc.NumDescriptors = countof(d3d12->chain.renderTargets) + GFX_MAX_SHADERS;
+   d3d12->desc.rtv_heap.desc.NumDescriptors = countof(d3d12->chain.renderTargets) + GFX_MAX_SHADERS * 2;
    d3d12->desc.rtv_heap.desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
    d3d12_init_descriptor_heap(d3d12->device, &d3d12->desc.rtv_heap);
 
    d3d12->desc.srv_heap.desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-   d3d12->desc.srv_heap.desc.NumDescriptors = SLANG_NUM_BINDINGS * GFX_MAX_SHADERS + 1024;
+   d3d12->desc.srv_heap.desc.NumDescriptors = SLANG_NUM_BINDINGS * GFX_MAX_SHADERS + 2048;
    d3d12->desc.srv_heap.desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
    d3d12_init_descriptor_heap(d3d12->device, &d3d12->desc.srv_heap);
 
@@ -535,7 +535,8 @@ bool d3d12_init_descriptors(d3d12_video_t* d3d12)
    {
       d3d12->pass[i].rt.rt_view.ptr =
             d3d12->desc.rtv_heap.cpu.ptr +
-            (countof(d3d12->chain.renderTargets) + i) * d3d12->desc.rtv_heap.stride;
+            (countof(d3d12->chain.renderTargets) + (2 * i)) * d3d12->desc.rtv_heap.stride;
+      d3d12->pass[i].feedback.rt_view.ptr = d3d12->pass[i].rt.rt_view.ptr + d3d12->desc.rtv_heap.stride;
 
       d3d12->pass[i].textures.ptr = d3d12_descriptor_heap_slot_alloc(&d3d12->desc.srv_heap).ptr -
                                     d3d12->desc.srv_heap.cpu.ptr + d3d12->desc.srv_heap.gpu.ptr;

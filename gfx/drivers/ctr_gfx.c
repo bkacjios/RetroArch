@@ -30,6 +30,9 @@
 #ifdef HAVE_MENU
 #include "../../menu/menu_driver.h"
 #endif
+#ifdef HAVE_GFX_WIDGETS
+#include "../gfx_widgets.h"
+#endif
 
 #include "../font_driver.h"
 #include "../../ctr/gpu_old.h"
@@ -51,7 +54,7 @@
  * Have to keep track of bottom screen enable state
  * externally, otherwise cannot detect current state
  * when reinitialising... */
-static bool ctr_bottom_screen_enabled = true;
+bool ctr_bottom_screen_enabled = true;
 
 static INLINE void ctr_check_3D_slider(ctr_video_t* ctr, ctr_video_mode_enum video_mode)
 {
@@ -325,13 +328,12 @@ static void ctr_set_bottom_screen_enable(void* data, bool enabled)
 {
    Handle lcd_handle;
    u8 not_2DS;
-   extern PrintConsole* currentConsole;
    ctr_video_t *ctr = (ctr_video_t*)data;
 
-    if (!ctr)
-      return;
+   if (!ctr)
+     return;
 
-   gfxBottomFramebuffers[0] = enabled ? (u8*)currentConsole->frameBuffer:
+   gfxBottomFramebuffers[0] = enabled ? (u8*)ctrConsole->frameBuffer:
                                         (u8*)ctr->empty_framebuffer;
 
    CFGU_GetModelNintendo2DS(&not_2DS);
@@ -482,7 +484,7 @@ static void* ctr_init(const video_info_t* video,
 
    if (input && input_data)
    {
-      ctrinput             = input_ctr.init(settings->arrays.input_joypad_driver);
+      ctrinput             = input_driver_init_wrap(&input_ctr, settings->arrays.input_joypad_driver);
       *input               = ctrinput ? &input_ctr : NULL;
       *input_data          = ctrinput;
    }
@@ -561,16 +563,13 @@ static bool ctr_frame(void* data, const void* frame,
 #ifdef HAVE_MENU
    bool menu_is_alive             = video_info->menu_is_alive;
 #endif
+#ifdef HAVE_GFX_WIDGETS
+   bool widgets_active            = video_info->widgets_active;
+#endif
 
    if (!width || !height || !settings)
    {
       gspWaitForEvent(GSPGPU_EVENT_VBlank0, true);
-      return true;
-   }
-
-   if(!aptMainLoop())
-   {
-      command_event(CMD_EVENT_QUIT, NULL);
       return true;
    }
 
@@ -780,6 +779,7 @@ static bool ctr_frame(void* data, const void* frame,
       GSPGPU_FlushDataCache(ctr->frame_coords, sizeof(ctr_vertex_t));
    }
 
+   GPUCMD_AddWrite(GPUREG_GSH_BOOLUNIFORM, ctr->rotation & 1);
    ctrGuSetVertexShaderFloatUniform(0, (float*)&ctr->scale_vector, 1);
    ctrGuSetTexture(GPU_TEXUNIT0, VIRT_TO_PHYS(ctr->texture_swizzled), ctr->texture_width, ctr->texture_height,
                   (ctr->smooth? GPU_TEXTURE_MAG_FILTER(GPU_LINEAR)  | GPU_TEXTURE_MIN_FILTER(GPU_LINEAR)
@@ -861,6 +861,7 @@ static bool ctr_frame(void* data, const void* frame,
                         GPU_TEXTURE_WRAP_S(GPU_CLAMP_TO_EDGE) | GPU_TEXTURE_WRAP_T(GPU_CLAMP_TO_EDGE),
                         GPU_RGBA4);
 
+         GPUCMD_AddWrite(GPUREG_GSH_BOOLUNIFORM, 0);
          ctrGuSetVertexShaderFloatUniform(0, (float*)&ctr->menu.scale_vector, 1);
          ctrGuSetAttributeBuffersAddress(VIRT_TO_PHYS(ctr->menu.frame_coords));
 
@@ -894,6 +895,11 @@ static bool ctr_frame(void* data, const void* frame,
    }
 #endif
 
+#ifdef HAVE_GFX_WIDGETS
+   if (widgets_active)
+      gfx_widgets_frame(video_info);
+#endif
+
    if (msg)
       font_driver_render_msg(ctr, msg, NULL, NULL);
 
@@ -916,6 +922,32 @@ static bool ctr_frame(void* data, const void* frame,
 
    /* Swap buffers : */
 
+#ifdef USE_CTRULIB_2
+   u32 *buf0, *buf1;
+   u32 stride;
+
+   buf0 = (u32*)gfxTopLeftFramebuffers[ctr->current_buffer_top];
+
+   if(ctr->video_mode == CTR_VIDEO_MODE_2D_800X240)
+   {
+      buf1 = (u32*)(gfxTopLeftFramebuffers[ctr->current_buffer_top] + 240 * 3);
+      stride = 240 * 3 * 2;
+   }
+   else
+   {
+      if (ctr->enable_3d)
+         buf1 = (u32*)gfxTopRightFramebuffers[ctr->current_buffer_top];
+      else
+         buf1 = buf0;
+
+      stride = 240 * 3;
+   }
+
+   u8 bit5 = (ctr->enable_3d != 0);
+
+   gspPresentBuffer(GFX_TOP, ctr->current_buffer_top, buf0, buf1,
+                    stride, (1<<8)|((1^bit5)<<6)|((bit5)<<5)|GSP_BGR8_OES);
+#else
    topFramebufferInfo.
       active_framebuf           = ctr->current_buffer_top;
    topFramebufferInfo.
@@ -953,6 +985,7 @@ static bool ctr_frame(void* data, const void* frame,
 	framebufferInfoHeader[0x0]  ^= 1;
 	framebufferInfo[framebufferInfoHeader[0x0]] = topFramebufferInfo;
 	framebufferInfoHeader[0x1]   = 1;
+#endif
 
    ctr->current_buffer_top     ^= 1;
    ctr->p3d_event_pending       = true;
@@ -1264,7 +1297,7 @@ static const video_poke_interface_t ctr_poke_interface = {
    ctr_apply_state_changes,
    ctr_set_texture_frame,
    ctr_set_texture_enable,
-   ctr_set_osd_msg,
+   font_driver_render_msg, /* ctr_set_osd_msg*/
    NULL,                   /* show_mouse */
    NULL,                   /* grab_mouse_toggle */
    NULL,                   /* get_current_shader */
@@ -1278,6 +1311,14 @@ static void ctr_get_poke_interface(void* data,
    (void)data;
    *iface = &ctr_poke_interface;
 }
+
+#ifdef HAVE_GFX_WIDGETS
+static bool ctr_gfx_widgets_enabled(void *data)
+{
+   (void)data;
+   return true;
+}
+#endif
 
 static bool ctr_set_shader(void* data,
                            enum rarch_shader_type type, const char* path)
@@ -1310,7 +1351,11 @@ video_driver_t video_ctr =
    NULL,
 #endif
 #ifdef HAVE_VIDEO_LAYOUT
-  NULL,
+   NULL,
 #endif
-   ctr_get_poke_interface
+   ctr_get_poke_interface,
+   NULL,
+#ifdef HAVE_GFX_WIDGETS
+   ctr_gfx_widgets_enabled
+#endif
 };

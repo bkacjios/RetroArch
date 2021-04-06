@@ -29,14 +29,6 @@
 
 RETRO_BEGIN_DECLS
 
-typedef struct command command_t;
-
-typedef struct command_handle
-{
-   command_t *handle;
-   unsigned id;
-} command_handle_t;
-
 enum event_command
 {
    CMD_EVENT_NONE = 0,
@@ -48,6 +40,7 @@ enum event_command
    CMD_EVENT_LOAD_CORE,
    CMD_EVENT_LOAD_CORE_PERSIST,
    CMD_EVENT_UNLOAD_CORE,
+   CMD_EVENT_CLOSE_CONTENT,
    CMD_EVENT_LOAD_STATE,
    /* Swaps the current state with what's on the undo load buffer */
    CMD_EVENT_UNDO_LOAD_STATE,
@@ -205,6 +198,7 @@ enum event_command
    CMD_EVENT_OSK_TOGGLE,
    CMD_EVENT_RECORDING_TOGGLE,
    CMD_EVENT_STREAMING_TOGGLE,
+   CMD_EVENT_RUNAHEAD_TOGGLE,
    CMD_EVENT_AI_SERVICE_TOGGLE,
    CMD_EVENT_BSV_RECORDING_TOGGLE,
    CMD_EVENT_SHADER_NEXT,
@@ -215,6 +209,14 @@ enum event_command
    CMD_EVENT_AI_SERVICE_CALL,
    CMD_EVENT_SAVE_FILES
 };
+
+typedef struct command command_t;
+
+typedef struct command_handle
+{
+   command_t *handle;
+   unsigned id;
+} command_handle_t;
 
 /**
  * command_event:

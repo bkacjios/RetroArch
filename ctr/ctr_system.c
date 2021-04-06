@@ -21,6 +21,8 @@ u32 __heapBase;
 u32 __stack_bottom;
 u32 __stack_size_extra;
 
+u32 __saved_stack;
+
 extern u32 __linear_heap_size_hbl;
 extern u32 __heap_size_hbl;
 extern void* __service_ptr;
@@ -74,6 +76,11 @@ void __system_allocateHeaps(void)
    /* Allocate the linear heap */
    svcControlMemory(&__linear_heap, 0x0, 0x0, __linear_heap_size, MEMOP_ALLOC_LINEAR, MEMPERM_READ | MEMPERM_WRITE);
 
+#ifdef USE_CTRULIB_2
+   /* Mappable allocator init */
+   mappableInit(OS_MAP_AREA_BEGIN, OS_MAP_AREA_END);
+#endif
+
    /* Set up newlib heap */
    fake_heap_end = (char*)0x13F00000;
 }
@@ -102,15 +109,26 @@ extern char** __system_argv;
 void __attribute__((noreturn)) __libctru_exit(int rc)
 {
    u32 tmp = 0;
+   int size = 0;
 
    if (__system_argv)
       free(__system_argv);
 
    /* Unmap the linear heap */
-   svcControlMemory(&tmp, __linear_heap, 0x0, __linear_heap_size, MEMOP_FREE, 0x0);
+   /* Do this 1MB at a time to avoid kernel panics, see https://github.com/LumaTeam/Luma3DS/issues/1504 */
+   while (__linear_heap_size > 0) {
+      size = __linear_heap_size < 0x100000 ? __linear_heap_size : 0x100000;
+      __linear_heap_size -= size;
+      svcControlMemory(&tmp, __linear_heap + __linear_heap_size, 0x0, size, MEMOP_FREE, 0x0);
+   }
 
    /* Unmap the application heap */
-   svcControlMemory(&tmp, __heapBase, 0x0, __heap_size, MEMOP_FREE, 0x0);
+   /* Do this 1MB at a time to avoid kernel panics */
+   while (__heap_size > 0) {
+      size = __heap_size < 0x100000 ? __heap_size : 0x100000;
+      __heap_size -= size;
+      svcControlMemory(&tmp, __heapBase + __heap_size, 0x0, size, MEMOP_FREE, 0x0);
+   }
 
    if (__stack_size_extra)
       svcControlMemory(&tmp, __stack_bottom, 0x0, __stack_size_extra, MEMOP_FREE, 0x0);
@@ -240,6 +258,9 @@ void __system_initArgv(void)
 
 void initSystem(void (*retAddr)(void))
 {
+   register u32 sp_val __asm__("sp");
+   __saved_stack = sp_val;
+
    __libctru_init(retAddr);
    __appInit();
    __system_initArgv();
@@ -250,6 +271,7 @@ void __attribute__((noreturn)) __ctru_exit(int rc)
 {
    __libc_fini_array();
    __appExit();
+   asm ("mov sp, %[saved_stack] \n\t" : : [saved_stack] "r"  (__saved_stack) : "sp");
    __libctru_exit(rc);
 }
 
@@ -298,6 +320,20 @@ void wait_for_input(void)
 
       svcSleepThread(1000000);
    }
+}
+
+void error_and_quit(const char* errorStr)
+{
+   errorConf error;
+#ifdef IS_SALAMANDER
+   gfxInitDefault();
+#endif
+   errorInit(&error, ERROR_TEXT, CFG_LANGUAGE_EN);
+   errorText(&error, errorStr);
+   errorDisp(&error);
+
+   gfxExit();
+   exit(0);
 }
 
 long sysconf(int name)
